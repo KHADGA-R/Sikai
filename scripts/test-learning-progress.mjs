@@ -1,0 +1,12 @@
+import { readFileSync } from 'node:fs';
+import assert from 'node:assert/strict';
+import ts from 'typescript';
+const js = ts.transpileModule(readFileSync('src/app/core/learning-progress.ts','utf8'), {compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ES2022}}).outputText;
+const {lessonProgress} = await import('data:text/javascript;base64,'+Buffer.from(js).toString('base64'));
+const lessons = [1,2,3].map(id=>({id,title:'Lesson',minutes:5}));
+assert.deepEqual(lessonProgress(lessons,[]),{completed:0,total:3,percent:0,finished:false});
+assert.deepEqual(lessonProgress(lessons,[1,1,999]),{completed:1,total:3,percent:33,finished:false});
+assert.deepEqual(lessonProgress(lessons,[1,2,3]),{completed:3,total:3,percent:100,finished:true});
+assert.equal(lessonProgress(lessons,[1,3]).finished,false);
+assert.deepEqual(lessonProgress([],[]),{completed:0,total:0,percent:0,finished:false});
+console.log('Passed: not-started, partial completion, duplicate/unknown IDs, completed course, completion reversal and empty curriculum.');

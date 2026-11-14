@@ -1,0 +1,36 @@
+<section class="container section page-min">
+  <div class="section-heading"><div><span class="eyebrow purple">INSTRUCTOR WORKSPACE</span><h1>My Courses</h1><p>Organize topics, upload lessons, and mark key moments.</p></div><button class="button primary" (click)="create()" [disabled]="busy()">+ Create course</button></div>
+  <p><a class="button outline" routerLink="/live-classes" [queryParams]="{view: 'teach'}">Manage live-class availability and student bookings</a></p>
+  <div class="demo-note">Local demo: your account manages its own content. Files stay in this browser (up to 100 MB each). These drafts are separate from the public catalog and admin library. Server storage and instructor approval are needed for shared publishing.</div>
+  @if(error()){<p class="error-note" role="alert">{{error()}}</p>}
+  @if(message()){<p class="success-note" role="status">{{message()}}</p>}
+  @if(busy()){<p role="status">Working?</p>}
+  <div class="content-workspace">
+    <aside class="panel course-list"><h2>My courses</h2>@for(course of courses(); track course.id){<button type="button" [class.selected-course]="draft?.id === course.id" [disabled]="busy()" (click)="edit(course)"><strong>{{course.title}}</strong><small>{{course.topics.length}} topics</small></button>}@empty{<p>No saved courses yet. Create your first course.</p>}</aside>
+    <div>
+    @if(draft; as course){
+      <div class="panel"><div class="editor-heading"><h2>Course editor</h2><span>{{dirty ? 'Unsaved changes' : 'Saved'}}</span></div>
+        <fieldset [disabled]="busy()"><label>Course title<input [(ngModel)]="course.title" (ngModelChange)="change()" maxlength="160" placeholder="e.g. Angular foundations" /></label><label>Description<textarea [(ngModel)]="course.description" (ngModelChange)="change()" rows="3"></textarea></label>
+        <label>Main category<select [(ngModel)]="course.category" (ngModelChange)="course.subcategory = subcategoriesFor($event)[0]; change()">@for(c of categories; track c.name){<option [value]="c.name">{{c.name}}</option>}</select></label>
+        <label>Subcategory<select [(ngModel)]="course.subcategory" (ngModelChange)="change()">@for(s of subcategoriesFor(course.category || 'Skills & Training'); track s){<option [value]="s">{{s}}</option>}</select></label>
+        @for(topic of course.topics; track topic.id; let ti = $index){
+          <section class="topic"><label>Topic {{ti + 1}}<input [(ngModel)]="topic.title" (ngModelChange)="change()" placeholder="Topic title" /></label>
+            <div class="editor-actions"><button class="button outline" (click)="move(course.topics, ti, -1)" [disabled]="ti === 0" aria-label="Move topic up">?</button><button class="button outline" (click)="move(course.topics, ti, 1)" [disabled]="ti === course.topics.length - 1" aria-label="Move topic down">?</button><button class="button outline danger" (click)="removeTopic(topic)">Remove topic</button></div>
+            @for(lesson of topic.lessons; track lesson.id; let li = $index){<article class="lesson-editor"><label>Lesson {{li + 1}} title<input [(ngModel)]="lesson.title" (ngModelChange)="change()" /></label><p class="file-info">{{lesson.fileName}} ? {{lesson.kind}} @if(lesson.duration){ ? {{formatTime(lesson.duration)}}}</p>
+              @if(lesson.kind !== 'pdf'){<label>Chapter timestamps<textarea [ngModel]="chapterDrafts[lesson.id] ?? chapterText(lesson)" (ngModelChange)="updateChapters(lesson, $event)" placeholder="00:00 Introduction&#10;05:30 First example" rows="3"></textarea></label><small>One per line: MM:SS Title or HH:MM:SS Title. Chapters are sorted by time.</small>}
+              <div class="editor-actions"><button class="button outline" (click)="showPreview(lesson)">Preview</button><button class="button outline" (click)="move(topic.lessons, li, -1)" [disabled]="li === 0" aria-label="Move lesson up">?</button><button class="button outline" (click)="move(topic.lessons, li, 1)" [disabled]="li === topic.lessons.length - 1" aria-label="Move lesson down">?</button><button class="button outline danger" (click)="removeLesson(topic, lesson)">Remove lesson</button></div>
+            </article>}
+            <label class="upload-label">Upload a lesson<input type="file" accept="video/*,audio/*,application/pdf" (change)="upload($event, topic)" /><small>Video, audio, or PDF ? maximum 100 MB</small></label>
+          </section>
+        }@empty{<p>Add a topic, then upload its lessons.</p>}
+        <div class="editor-actions"><button class="button outline" (click)="addTopic()">+ Add topic</button><button class="button primary" (click)="save()">Save course content</button></div></fieldset>
+      </div>
+      @if(preview; as lesson){<section class="panel preview"><div class="editor-heading"><h2>{{lesson.title}}</h2><button class="button outline" (click)="closePreview()">Close preview</button></div>
+        @if(lesson.kind === 'video'){<video #video controls preload="metadata" [src]="previewUrl"></video><div class="chapter-links">@for(chapter of lesson.chapters; track chapter.seconds){<button class="button outline" (click)="seek(video, chapter.seconds)">{{formatTime(chapter.seconds)}} ? {{chapter.title}}</button>}</div>}
+        @else if(lesson.kind === 'audio'){<audio #audio controls preload="metadata" [src]="previewUrl"></audio><div class="chapter-links">@for(chapter of lesson.chapters; track chapter.seconds){<button class="button outline" (click)="seek(audio, chapter.seconds)">{{formatTime(chapter.seconds)}} ? {{chapter.title}}</button>}</div>}
+        @else{<p>PDF document: {{lesson.fileName}}</p><a class="button primary" [href]="previewUrl" target="_blank" rel="noopener">Open PDF</a>}
+      </section>}
+    }@else{<div class="panel"><h2>Build your learning path</h2><p>Select a saved course or create one to begin adding topics and lessons.</p></div>}
+    </div>
+  </div>
+</section>
