@@ -1,4 +1,5 @@
 import { CATEGORY_NAMES, migrateCategory, validClassification } from '../core/categories';
+import { validGrade } from '../core/grades';
 import { Injectable, signal } from '@angular/core';
 import { Course } from '../core/models';
 import { SAMPLE_COURSES } from '../core/sample-data';
@@ -18,7 +19,7 @@ export function validCourse(c: Course): boolean {
     && Number.isSafeInteger(c.lessons) && c.lessons >= 0
     && Number.isFinite(c.rating) && c.rating >= 0 && c.rating <= 5
     && typeof c.emoji === 'string' && !!c.emoji.trim()
-    && accents.includes(c.accent) && typeof c.published === 'boolean';
+    && accents.includes(c.accent) && typeof c.published === 'boolean' && validGrade(c.grade);
 }
 
 @Injectable({ providedIn: 'root' })

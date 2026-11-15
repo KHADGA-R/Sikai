@@ -1,3 +1,5 @@
+import { SCHOOL_GRADES } from '../core/grades';
+import { BrandLogoComponent } from '../shared/brand-logo.component';
 import { subcategoriesFor } from '../core/categories';
 import { Component, computed, inject, signal } from '@angular/core';
 import { FormsModule, NgForm } from '@angular/forms';
@@ -9,9 +11,9 @@ function emptyCourse(): Course {
   return { id: 1, title: '', description: '', instructor: '', category: 'Culture & Heritage', subcategory: 'Festivals & Traditions', level: 'BEGINNER', price: 0, isFree: true, rating: 0, durationHours: 0, lessons: 0, emoji: '📘', accent: 'violet', published: false };
 }
 
-@Component({ standalone: true, imports: [FormsModule, RouterLink], styleUrl: './admin.component.css', template: `
+@Component({ standalone: true, imports: [FormsModule, RouterLink, BrandLogoComponent], styleUrl: './admin.component.css', template: `
 <div class="admin-shell">
-  <aside class="admin-sidebar"><a class="admin-brand" routerLink="/admin"><img src="assets/sikai-mark.svg" alt="" width="42" height="42" /> <span>Sikai <small>ADMIN PORTAL</small></span></a><div class="sidebar-label">WORKSPACE</div><a class="sidebar-active" routerLink="/admin">▤ &nbsp; Course management</a><div class="sidebar-bottom">Local administration demo<br><a routerLink="/">Open user portal ↗</a></div></aside>
+  <aside class="admin-sidebar"><a class="admin-brand" routerLink="/admin"><app-brand-logo /><small>ADMIN PORTAL</small></a><div class="sidebar-label">WORKSPACE</div><a class="sidebar-active" routerLink="/admin">▤ &nbsp; Course management</a><div class="sidebar-bottom">Local administration demo<br><a routerLink="/">Open user portal ↗</a></div></aside>
   <main class="admin-main">
     <header class="admin-topbar"><span>Workspace / <strong>Courses</strong></span><span class="demo-badge">Local demo</span></header>
     <section class="admin-content">
@@ -29,6 +31,7 @@ function emptyCourse(): Course {
               <label class="span-two">Description<textarea name="description" [(ngModel)]="draft.description" required rows="3"></textarea></label>
               <label>Category<select name="category" [(ngModel)]="draft.category" (ngModelChange)="draft.subcategory = subcategoriesFor($event)[0]">@for(c of categories; track c){<option [value]="c">{{c}}</option>}</select></label>
               <label>Subcategory<select name="subcategory" [(ngModel)]="draft.subcategory" required><option value="">Choose a subcategory</option>@for(s of subcategoriesFor(draft.category); track s){<option [value]="s">{{s}}</option>}</select></label>
+              <label>School grade<select name="grade" [(ngModel)]="draft.grade"><option [ngValue]="undefined">Not grade-specific</option>@for(year of schoolGrades; track year){<option [ngValue]="year">Grade {{year}}</option>}</select><small>Used for academic course browsing.</small></label>
               <label>Level<select name="level" [(ngModel)]="draft.level">@for(l of levels; track l){<option [value]="l">{{l}}</option>}</select></label>
               <label>Price (USD)<input name="price" type="number" [(ngModel)]="draft.price" required min="0" step="0.01" /></label>
               <label>Duration (hours)<input name="duration" type="number" [(ngModel)]="draft.durationHours" required min="0" step="0.5" /></label>
@@ -45,7 +48,7 @@ function emptyCourse(): Course {
       }
       <section class="admin-card"><div class="library-header"><h2>Course library</h2><span>{{filtered().length}} results</span></div><div class="admin-filters"><input aria-label="Search courses" placeholder="Search title or instructor…" [ngModel]="search()" (ngModelChange)="search.set($event)" /><select aria-label="Filter by status" [ngModel]="status()" (ngModelChange)="status.set($event)"><option value="all">All statuses</option><option value="published">Published</option><option value="draft">Draft</option></select></div>
         <div class="table-wrap"><table><thead><tr><th>Course</th><th>Category / Level</th><th>Price</th><th>Status</th><th>Actions</th></tr></thead><tbody>
-          @for(c of filtered(); track c.id){<tr><td><div class="course-cell"><span [class]="'admin-icon '+c.accent">{{c.emoji}}</span><div><strong>{{c.title}}</strong><small>{{c.instructor}} · {{c.lessons}} lessons</small></div></div></td><td>{{c.category}}<small>{{c.subcategory}}</small><small>{{c.level.toLowerCase()}}</small></td><td>{{c.isFree ? 'Free' : '$' + c.price.toFixed(2)}}</td><td><span class="status-pill" [class.published]="c.published">{{c.published ? 'Published' : 'Draft'}}</span></td><td><div class="row-actions"><button class="text-button" (click)="edit(c)" [attr.aria-label]="'Edit '+c.title">Edit</button><button class="text-button danger" (click)="askDelete(c)" [attr.aria-label]="'Delete '+c.title">Delete</button></div></td></tr>}
+          @for(c of filtered(); track c.id){<tr><td><div class="course-cell"><span [class]="'admin-icon '+c.accent">{{c.emoji}}</span><div><strong>{{c.title}}</strong><small>{{c.instructor}} · {{c.lessons}} lessons</small></div></div></td><td>{{c.category}}<small>{{c.subcategory}}</small><small>{{c.level.toLowerCase()}}@if(c.grade){ &middot; Grade {{c.grade}}}</small></td><td>{{c.isFree ? 'Free' : '$' + c.price.toFixed(2)}}</td><td><span class="status-pill" [class.published]="c.published">{{c.published ? 'Published' : 'Draft'}}</span></td><td><div class="row-actions"><button class="text-button" (click)="edit(c)" [attr.aria-label]="'Edit '+c.title">Edit</button><button class="text-button danger" (click)="askDelete(c)" [attr.aria-label]="'Delete '+c.title">Delete</button></div></td></tr>}
           @empty{<tr><td colspan="5" class="admin-empty">{{store.courses().length ? 'No courses match your search.' : 'No courses yet. Add your first course to get started.'}}</td></tr>}
         </tbody></table></div>
       </section>
@@ -55,6 +58,7 @@ function emptyCourse(): Course {
 </div>` })
 export class AdminComponent {
   readonly store = inject(AdminCourseService);
+  readonly schoolGrades = SCHOOL_GRADES;
   readonly subcategoriesFor = subcategoriesFor; readonly categories = categories; readonly levels = levels; readonly accents = accents;
   readonly search = signal(''); readonly status = signal('all');
   readonly message = signal(''); readonly error = signal(''); readonly editorOpen = signal(false);

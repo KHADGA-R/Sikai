@@ -4,6 +4,8 @@ export const COURSE_CATEGORIES = [
   { name: 'Dance & Performing Arts', image: 'nepali-dance', subcategories: ['Traditional Dance', 'Folk Dance', 'Classical Dance', 'Modern Dance', 'Choreography', 'Theater & Acting'] },
   { name: 'Arts & Crafts', image: 'thangka-art', subcategories: ['Traditional Arts', 'Painting & Drawing', 'Handicrafts', 'Pottery & Sculpture', 'Textile & Fashion', 'Digital Arts'] },
   { name: 'Languages', image: 'nepali-language', subcategories: ['Nepali', 'Indigenous & Regional Languages', 'English', 'Foreign Languages', 'Language for Kids', 'Translation & Literature'] },
+  { name: 'K–12 Maths', image: 'online-learning', subcategories: ['Primary Maths', 'Lower Secondary Maths', 'Secondary Maths', 'Higher Secondary Maths'] },
+  { name: 'SEE Preparation', image: 'online-learning', subcategories: ['Mathematics', 'Science', 'English', 'Nepali', 'Social Studies', 'Optional Mathematics'] },
   { name: 'Skills & Training', image: 'online-learning', subcategories: ['IT & Technology', 'Business & Entrepreneurship', 'Digital Marketing', 'Creative Skills', 'Career Development', 'Vocational Training'] }
 ] as const;
 export type Category = typeof COURSE_CATEGORIES[number]['name'];
