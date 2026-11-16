@@ -1,9 +1,24 @@
-/node_modules
-/dist
-/.angular
-/coverage
-.env
-.env.*
-!.env.example
-.DS_Store
-*.log
+# Local workspace settings and the unused workspace-level npm lock file.
+/.vscode/
+/package-lock.json
+
+# Dependencies, build output and browser test artifacts.
+**/node_modules/
+**/dist/
+**/.angular/
+**/coverage/
+**/target/
+**/.m2/
+**/playwright-report/
+**/test-results/
+
+# Local databases, uploaded lesson binaries and credentials.
+**/data/
+**/uploads/
+**/.env
+**/.env.*
+!**/.env.example
+**/*.log
+**/.idea/
+**/*.iml
+**/.DS_Store

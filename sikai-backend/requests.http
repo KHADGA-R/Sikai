@@ -1,0 +1,79 @@
+### Use an HTTP client supporting .http variables. Replace token/IDs after each create.
+@base = http://localhost:8080/api
+@token = REPLACE_WITH_TOKEN
+@courseId = 1
+@topicId = REPLACE_WITH_TOPIC_ID
+@slotId = REPLACE_WITH_SLOT_ID
+@bookingId = REPLACE_WITH_BOOKING_ID
+
+### Register an instructor; use a different email for a student account
+POST {{base}}/auth/register
+Content-Type: application/json
+
+{"name":"Sita Teacher","email":"teacher@example.com","password":"ChooseYourPassword123!","role":"instructor"}
+
+### Login
+POST {{base}}/auth/login
+Content-Type: application/json
+
+{"email":"teacher@example.com","password":"ChooseYourPassword123!"}
+
+### Current account
+GET {{base}}/auth/me
+Authorization: Bearer {{token}}
+
+### Create a free published course (instructor token)
+POST {{base}}/instructor/courses
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{"title":"Nepali Conversation","description":"Practice everyday conversations.","category":"Languages","subcategory":"Nepali","price":0,"level":"BEGINNER","durationHours":2,"emoji":"📚","accent":"teal","published":true}
+
+### Browse
+GET {{base}}/courses?category=Languages&page=0&size=20
+
+### Create a topic
+POST {{base}}/instructor/courses/{{courseId}}/topics
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{"title":"Foundations","position":0}
+
+### Create a PDF lesson; upload binary separately through multipart field file
+POST {{base}}/instructor/topics/{{topicId}}/lessons
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{"title":"Greetings handout","minutes":10,"kind":"pdf","duration":0,"chapters":[],"position":0}
+
+### Enroll with a student token
+PUT {{base}}/me/enrollments/{{courseId}}
+Authorization: Bearer {{token}}
+
+### Save teacher profile
+PUT {{base}}/live-classes/teacher
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{"subject":"Languages","bio":"I teach conversational Nepali.","languages":"Nepali, English"}
+
+### Discover slots; create availability using a future epoch millisecond start first
+GET {{base}}/live-classes/slots
+
+### Book with another user's token
+POST {{base}}/live-classes/bookings
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{"slotId":"{{slotId}}","goals":"Practice conversation","timezone":"Asia/Kathmandu"}
+
+### Participant message
+POST {{base}}/live-classes/bookings/{{bookingId}}/messages
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{"text":"Looking forward to class!"}
+
+### Logout
+POST {{base}}/auth/logout
+Authorization: Bearer {{token}}

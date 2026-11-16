@@ -1,0 +1,10 @@
+target/
+.m2/
+data/
+uploads/
+.env
+.env.*
+!.env.example
+*.log
+.idea/
+*.iml
