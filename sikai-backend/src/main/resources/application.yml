@@ -29,6 +29,22 @@ management:
   endpoints.web.exposure.include: health
   endpoint.health.show-details: never
 sikai:
+  payments:
+    frontend-url: ${PAYMENT_FRONTEND_URL:http://localhost:4200}
+    usd-npr-rate: ${USD_NPR_RATE:0}
+    esewa:
+      product-code: ${ESEWA_PRODUCT_CODE:}
+      secret-key: ${ESEWA_SECRET_KEY:}
+      form-url: ${ESEWA_FORM_URL:https://rc.esewa.com.np/api/epay/main/v2/form}
+      status-url: ${ESEWA_STATUS_URL:https://rc.esewa.com.np/api/epay/transaction/status/}
+    khalti:
+      secret-key: ${KHALTI_SECRET_KEY:}
+      api-url: ${KHALTI_API_URL:https://dev.khalti.com/api/v2/}
+    paypal:
+      enabled: ${PAYPAL_ENABLED:false}
+      client-id: ${PAYPAL_CLIENT_ID:}
+      client-secret: ${PAYPAL_CLIENT_SECRET:}
+      api-url: ${PAYPAL_API_URL:https://api-m.sandbox.paypal.com}
   cors-origins: ${CORS_ORIGINS:http://localhost:4200,http://127.0.0.1:4200}
   token-hours: ${TOKEN_HOURS:24}
   upload-directory: ${UPLOAD_DIRECTORY:./uploads}

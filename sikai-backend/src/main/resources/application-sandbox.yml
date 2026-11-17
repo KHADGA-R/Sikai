@@ -1,0 +1,16 @@
+# Public eSewa UAT credentials. This profile is for local testing only.
+# Khalti requires KHALTI_SECRET_KEY from https://test-admin.khalti.com/.
+sikai:
+  payments:
+    frontend-url: ${PAYMENT_FRONTEND_URL:http://localhost:4200}
+    # Deliberately fixed test rate, not a current market exchange rate.
+    usd-npr-rate: ${USD_NPR_RATE:100}
+    esewa:
+      product-code: EPAYTEST
+      secret-key: '8gBm/:&EnhH.1/q'
+      form-url: https://rc.esewa.com.np/api/epay/main/v2/form
+      status-url: https://rc.esewa.com.np/api/epay/transaction/status/
+    khalti:
+      api-url: https://dev.khalti.com/api/v2/
+    paypal:
+      api-url: https://api-m.sandbox.paypal.com

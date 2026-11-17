@@ -153,14 +153,77 @@ Backend tests use isolated in-memory H2 and files under `target/test-uploads`. T
 | Database appears empty after restarting | Confirm the working directory and configured database URL are unchanged |
 | Login is rejected | Use an account created through this backend, not the old browser-only demo |
 | Admin bootstrap fails | Supply both valid admin variables and choose an email not already assigned a non-admin role |
-| Paid enrollment returns 409 | Payment verification is not implemented; use a free course for testing |
+| Paid enrollment returns 409 | Use checkout with a configured wallet; the direct enrollment endpoint accepts only free courses |
 | Booking returns 409 | Check future time, availability, self-booking and both participants' conflicting classes |
 | Email result says `sent:false` | Booking may still be saved; check `EMAIL_ENABLED` and SMTP configuration |
 | Protected file returns 403/404 | Check course access, the attached file metadata and configured upload directory |
 
 ## Current limits
 
-Paid courses can be listed, but paid enrollment is blocked until a verified payment integration exists. No money is charged. Password recovery, email verification, Google sign-in, reviews and certificates are not implemented. Messaging uses REST polling.
+### Checkout API
+
+Checkout requires a bearer token. The frontend creates an order, then completes it:
+
+| Endpoint | Behavior |
+| --- | --- |
+| `GET /api/checkout/courses/{courseId}` | NPR checkout quote, original USD price, enrollment state, wallet availability and active payment ID; falls back to USD with payments disabled when no exchange rate is configured |
+| `POST /api/checkout/orders` | Body: `{"courseId":123}`. Creates or reuses the account's order; pending orders refresh to the current catalog price |
+| `GET /api/checkout/orders/{id}` | Returns only the purchaser's order, including amount, currency, status and timestamps |
+| `POST /api/checkout/orders/{id}/complete` | Atomically completes a free order and enrollment; repeat requests return the completed receipt |
+| `POST /api/checkout/orders/{id}/payments` | Body: `{"provider":"esewa","expectedAmount":1000,"expectedCurrency":"NPR"}` (or `khalti`). PayPal uses `{"provider":"paypal","expectedAmount":10,"expectedCurrency":"USD"}`. Reserves an immutable attempt and returns a signed form or approval redirect |
+| `GET /api/checkout/payments/{id}` | Purchaser-only payment state and resumable redirect |
+| `POST /api/checkout/payments/{id}/verify` | Optional body: `{"data":"base64 eSewa response"}`. Performs provider lookup; only confirmed payment of the exact NPR total grants enrollment |
+
+Flyway V2/V3 add persistent orders and payment attempts; V4 extends currency/provider checks for PayPal while retaining existing records. Restart the backend to apply migrations. Browser prices, callback statuses and caller-supplied transaction IDs never grant access. eSewa callbacks have HMAC verification when supplied, followed by server-side status lookup; Khalti always uses its stored `pidx` for lookup. PayPal retrieves its stored order and captures approved payments server-side. Exact amounts, currencies and transaction references are checked. Completion and enrollment commit together; repeated verification is idempotent. Courses with payment records must be unpublished rather than deleted.
+
+### Configure eSewa and Khalti
+
+For local eSewa testing, run `./start-sandbox.ps1` from this folder after stopping the existing backend. The `sandbox` profile uses eSewa's public UAT credentials and a fixed test conversion of 100 NPR/USD. Normal startup keeps paid wallets disabled unless configured. To also enable Khalti sandbox, set `KHALTI_SECRET_KEY` in the same terminal using the key from `https://test-admin.khalti.com/` before running the script. Never use the `sandbox` profile for production. Existing local accounts/courses are retained; sandbox orders and enrollments use the same local database.
+
+Configure environment variables in the backend terminal before starting Maven. Secrets belong on the backend, never in Angular or Git. Spring does not automatically load `.env` files.
+
+| Variable | Value / default |
+| --- | --- |
+| `PAYMENT_FRONTEND_URL` | `http://localhost:4200`; set to the frontend's full origin in deployment |
+| `USD_NPR_RATE` | Merchant-selected NPR per USD conversion rate; default `0` disables new paid payments. No live exchange-rate feed is used |
+| `ESEWA_PRODUCT_CODE` | Your eSewa merchant product code; sandbox uses the provider's test merchant code |
+| `ESEWA_SECRET_KEY` | Your eSewa signing secret |
+| `ESEWA_FORM_URL` | Sandbox: `https://rc.esewa.com.np/api/epay/main/v2/form`; a signed POST redirects to the ePay UI on `rc-epay.esewa.com.np`. The old form path on the UI host returns 404 |
+| `ESEWA_STATUS_URL` | Sandbox: `https://rc.esewa.com.np/api/epay/transaction/status/` (verified reachable; the older `uat` hostname no longer resolves) |
+| `KHALTI_SECRET_KEY` | Merchant secret from Khalti's test dashboard for sandbox, live dashboard for production |
+| `KHALTI_API_URL` | Sandbox default: `https://dev.khalti.com/api/v2/` |
+
+The catalog remains priced in USD. Checkout shows the NPR equivalent, rounded to two decimals; payment initiation checks the learner-reviewed total and freezes that NPR amount. Khalti sends amounts in paisa and requires at least NPR 10; eSewa sends rupees. Configure either provider or both. Unconfigured wallets appear unavailable.
+
+For production, use merchant-approved live credentials with `ESEWA_FORM_URL=https://epay.esewa.com.np/api/epay/main/v2/form`, `ESEWA_STATUS_URL=https://epay.esewa.com.np/api/epay/transaction/status/`, and `KHALTI_API_URL=https://khalti.com/api/v2/`. Use an HTTPS frontend URL and confirm wallet return URLs with your merchant accounts. Sandbox settings must remain separate from production.
+
+The learner returns to `/checkout/{courseId}/payment/{attemptId}` for verification. Refreshing normal checkout also recovers an active attempt. Pending payments can be rechecked or resumed; only provider-confirmed cancelled/expired attempts allow another payment. Uncertain Khalti initiation (for example a timeout after the provider received a request) remains reserved and requires merchant reconciliation using its attempt ID / purchase order ID before another charge. There is no automatic background reconciliation or refund/access-revocation workflow yet.
+
+Provider integration references: [eSewa ePay v2](https://developer.esewa.com.np/pages/Epay), [Khalti Web Checkout](https://docs.khalti.com/khalti-epayment/). Automated tests use local fake provider servers; actual sandbox merchant transactions still require your credentials.
+
+### Configure PayPal sandbox
+
+PayPal is currently shown as **Available soon** and disabled by default, including when credentials exist. When ready to activate testing, explicitly set `$env:PAYPAL_ENABLED = 'true'` before starting the backend. Leave it unset for the disabled placeholder.
+
+On Windows, run `./configure-paypal-sandbox.ps1` to enter the sandbox Client ID and Secret locally. The helper validates them against PayPal's sandbox OAuth endpoint, then saves a Windows-encrypted credential file (`paypal-sandbox.local.xml`, ignored by Git). `./start-sandbox.ps1` loads this file when the complete environment-variable pair is absent. The encrypted secret can be decrypted only by the same Windows user on the same machine; normal non-sandbox startup does not load it. Restart the backend after configuration. Do not send the secret through chat.
+
+1. In the [PayPal Developer Dashboard](https://developer.paypal.com/dashboard/), open **Apps & Credentials**, choose **Sandbox**, and create an app associated with a sandbox business account.
+2. Copy its client ID and client secret to the backend terminal's environment. Keep both on the backend; do not commit them or add them to Angular.
+3. Restart the sandbox backend:
+
+```powershell
+$env:PAYPAL_CLIENT_ID = 'YOUR_SANDBOX_CLIENT_ID'
+$env:PAYPAL_CLIENT_SECRET = 'YOUR_SANDBOX_CLIENT_SECRET'
+./start-sandbox.ps1
+```
+
+`PAYPAL_API_URL` defaults to `https://api-m.sandbox.paypal.com`; the sandbox profile pins that address. PayPal charges the catalog's original USD amount and needs no `USD_NPR_RATE`. Selecting another provider changes the displayed amount/currency and requires the learner to review the total again. Without credentials, PayPal appears unavailable.
+
+Use a separate **personal sandbox account** as the test buyer, not the business account receiving the payment. See [PayPal sandbox accounts](https://developer.paypal.com/sandbox-testing/accounts) and [credential setup](https://developer.paypal.com/api/get-started/). Real PayPal sandbox approval/capture requires your own app credentials; automated tests use a local fake PayPal API.
+
+The server creates an Orders v2 `CAPTURE` order with a stable `PayPal-Request-Id`, redirects to the provider's approval URL, then retrieves and captures the stored order on return. `APPROVED` alone never grants access: both the order and its exact-amount USD capture must be `COMPLETED`. Capture retries use the same idempotency key, and uncertain order creation can be recovered using its original key. Callback query tokens are never used as order references. Fulfillment happens on return or explicit status check; no background PayPal webhook/refund workflow is implemented. For production, use an approved live app and `PAYPAL_API_URL=https://api-m.paypal.com` with the sandbox profile disabled.
+
+Paid courses use eSewa, Khalti or PayPal after configuration; free courses need no payment provider. Password recovery, email verification, Google sign-in, reviews and certificates are not implemented. Messaging uses REST polling.
 
 Files are stored on local disk and served through authenticated downloads. MIME checking is an allowlist, not virus scanning. Replaced/detached/deleted binaries remain on disk for future cleanup. The connected frontend already fetches files as authenticated Blobs.
 

@@ -14,6 +14,10 @@ Angular 20 learning application connected to the separate Spring Boot API in `..
 
 ## Quick start
 
+Course enrollment uses `/checkout/:id`. Free enrollment completes through persisted backend orders; paid checkout offers eSewa, Khalti and PayPal when configured. Catalog prices remain USD; eSewa/Khalti checkout displays the server-quoted NPR amount, while PayPal charges USD. Selecting a payment method updates the total and requires confirmation again. Payment returns and pending-payment recovery verify with the backend before showing course access. Configure [Nepali wallets](../sikai-backend/README.md#configure-esewa-and-khalti) or [PayPal sandbox](../sikai-backend/README.md#configure-paypal-sandbox) on the backend. No merchant secrets belong in frontend configuration.
+
+Checkout UI checks: `npx playwright test e2e/checkout.spec.ts`. These use mocked API responses; backend payment integration tests exercise local fake provider servers. A real sandbox payment requires merchant credentials.
+
 Requirements: Node.js 22.12+ or another Angular 20-compatible version, npm, Java 17+ and Maven 3.9+.
 
 Open two terminals at the workspace root. Keep both applications running.

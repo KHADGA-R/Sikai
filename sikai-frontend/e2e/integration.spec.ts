@@ -46,8 +46,11 @@ test('instructor publishes an uploaded course; student enrolls, opens its file a
     const courseUrl = student.url();
     await student.getByRole('button', { name: 'Add to wishlist', exact: false }).click();
     await expect(student.getByRole('button', { name: 'Saved to wishlist', exact: false })).toBeVisible();
-    await student.getByRole('button', { name: 'Enroll for free', exact: true }).click();
-    await student.getByRole('link', { name: 'Continue learning', exact: false }).click();
+    await student.getByRole('link', { name: 'Enroll for free', exact: true }).click();
+    await expect(student).toHaveURL(/\/checkout\/\d+$/);
+    await student.getByRole('checkbox', { name: 'I confirm that I want to enroll in this course with the account above.' }).check();
+    await student.getByRole('button', { name: 'Complete free enrollment', exact: false }).click();
+    await student.getByRole('link', { name: 'Start learning', exact: false }).click();
     await expect(student.getByRole('link', { name: 'Open PDF', exact: true })).toHaveAttribute('href', /^blob:/);
     await student.getByRole('button', { name: 'Mark lesson complete', exact: false }).click();
     await expect(student.getByRole('button', { name: 'Completed — mark incomplete', exact: false })).toBeVisible();

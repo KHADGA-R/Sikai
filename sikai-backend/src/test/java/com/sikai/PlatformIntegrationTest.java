@@ -31,6 +31,32 @@ class PlatformIntegrationTest {
         return request("POST","/api/auth/register",null,Map.of("name","Test "+role,"email",UUID.randomUUID()+"@test.example","password","Pass12345!","role",role),201).get("token").asText();
     }
     private Map<String,Object> course(boolean free) { return Map.of("title","Nepali foundations","description","Learn conversational Nepali","category","Languages","subcategory","Nepali","price",free?0:10,"level","BEGINNER","durationHours",2,"emoji","N","accent","teal","published",true); }
+    @Test void checkoutOrdersArePrivateIdempotentAndServerPriced() throws Exception {
+        String teacher=register("instructor"),buyer=register("student"),other=register("student");
+        long id=request("POST","/api/instructor/courses",teacher,course(true),201).get("id").asLong();
+        request("POST","/api/checkout/orders",null,Map.of("courseId",id),401);
+        request("POST","/api/checkout/orders",buyer,Map.of("courseId",0),400);
+        String order=request("POST","/api/checkout/orders",buyer,Map.of("courseId",id),200).get("id").asText();
+        assertThat(request("POST","/api/checkout/orders",buyer,Map.of("courseId",id),200).get("id").asText()).isEqualTo(order);
+        request("GET","/api/checkout/orders/"+order,other,null,404);
+        request("POST","/api/checkout/orders/"+order+"/complete",other,null,404);
+        assertThat(request("POST","/api/checkout/orders/"+order+"/complete",buyer,null,200).get("status").asText()).isEqualTo("completed");
+        request("POST","/api/checkout/orders/"+order+"/complete",buyer,null,200);
+        assertThat(request("GET","/api/me/enrollments",buyer,null,200)).hasSize(1);
+        long paid=request("POST","/api/instructor/courses",teacher,course(false),201).get("id").asLong();
+        JsonNode paidOrder=request("POST","/api/checkout/orders",buyer,Map.of("courseId",paid,"amount",0,"status","completed"),200);
+        assertThat(paidOrder.get("amount").decimalValue()).isEqualByComparingTo("10");
+        request("POST","/api/checkout/orders/"+paidOrder.get("id").asText()+"/complete",buyer,null,409);
+        assertThat(request("GET","/api/me/enrollments",buyer,null,200)).hasSize(1);
+        long changed=request("POST","/api/instructor/courses",teacher,course(true),201).get("id").asLong();
+        String changedOrder=request("POST","/api/checkout/orders",buyer,Map.of("courseId",changed),200).get("id").asText();
+        request("PUT","/api/instructor/courses/"+changed,teacher,course(false),200);
+        request("POST","/api/checkout/orders/"+changedOrder+"/complete",buyer,null,409);
+        var draft=new HashMap<>(course(true)); draft.put("published",false);
+        long hidden=request("POST","/api/instructor/courses",teacher,draft,201).get("id").asLong();
+        request("POST","/api/checkout/orders",buyer,Map.of("courseId",hidden),404);
+    }
+
     @Test void authenticationAndRoles() throws Exception {
         request("GET","/actuator/health",null,null,200);
         request("GET","/api/courses/not-a-number",null,null,400);

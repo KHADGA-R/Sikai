@@ -4,6 +4,7 @@ import jakarta.validation.Valid;
 import java.util.*;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.transaction.annotation.Transactional;
 
 /** Public catalog and instructor/admin course management. */
 @RestController
@@ -34,7 +35,13 @@ public class CatalogController {
     @PutMapping("/instructor/courses/{id}") public Object update(@PathVariable long id,@Valid @RequestBody CatalogService.CourseInput input,@AuthenticationPrincipal AuthService.User user) { catalog.update(id,input,user); return catalog.course(id,user); }
 
     /** Verify ownership before deleting the course and database-cascaded learning/content records. */
-    @DeleteMapping("/instructor/courses/{id}") public Object delete(@PathVariable long id,@AuthenticationPrincipal AuthService.User user) { catalog.owner(id,user); db.update("DELETE FROM course WHERE id=?",id); return Map.of("success",true); }
+    @DeleteMapping("/instructor/courses/{id}") @Transactional
+    public Object delete(@PathVariable long id,@AuthenticationPrincipal AuthService.User user) {
+        catalog.owner(id,user);
+        db.one("SELECT id FROM course WHERE id=? FOR UPDATE",id);
+        Db.require(!db.exists("SELECT id FROM checkout_payment WHERE course_id=?",id),org.springframework.http.HttpStatus.CONFLICT,"Courses with payment records cannot be deleted. Unpublish the course instead");
+        db.update("DELETE FROM course WHERE id=?",id); return Map.of("success",true);
+    }
 
     /** List all courses for an administrator; the security filter protects this route. */
     @GetMapping("/admin/courses") public Object adminCourses() { return db.list(CatalogService.SELECT+" ORDER BY c.id"); }
