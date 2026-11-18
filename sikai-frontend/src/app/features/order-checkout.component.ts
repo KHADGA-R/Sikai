@@ -8,16 +8,18 @@ import { CartService } from '../core/cart.service';
 import { LearnHubStore } from '../core/store.service';
 import { RedirectPayment, redirectToPayment } from '../core/payment-redirect';
 import { CourseArtworkComponent } from './course-artwork.component';
+import { CouponEntryComponent } from '../shared/coupon-entry.component';
 
 interface OrderQuote {
   orderId: string; status: string; amount: number; currency: string; originalAmount: number;
+  subtotal?: number; discountAmount?: number; couponCode?: string | null;
   items: {courseId: number; title: string; amount: number}[];
   activeAttempt: string | null; activeProvider: string | null; paymentAvailable: boolean; configurationMessage: string;
   providers: {id: string; label: string; amount: number; currency: string; available: boolean}[];
 }
 interface OrderPayment extends RedirectPayment { id: string; orderId: string; provider: string; amount: number; currency: string; }
 
-@Component({ standalone: true, imports: [RouterLink, CurrencyPipe, CourseArtworkComponent], templateUrl: './order-checkout.component.html', styleUrls: ['./checkout.component.css', './order-checkout.component.css'] })
+@Component({ standalone: true, imports: [RouterLink, CurrencyPipe, CourseArtworkComponent, CouponEntryComponent], templateUrl: './order-checkout.component.html', styleUrls: ['./checkout.component.css', './order-checkout.component.css'] })
 export class OrderCheckoutComponent {
   readonly auth = inject(AuthService);
   private readonly api = inject(ApiService);
@@ -29,6 +31,7 @@ export class OrderCheckoutComponent {
   readonly quote = signal<OrderQuote | null>(null);
   readonly loading = signal(true); readonly busy = signal(false); readonly error = signal('');
   readonly accepted = signal(false); readonly provider = signal(''); readonly message = signal('');
+  readonly couponBusy = signal(false);
   readonly attempt = computed(() => this.quote()?.activeAttempt);
   readonly selected = computed(() => this.quote()?.providers.find(p => p.id === this.provider()));
   readonly total = computed(() => this.attempt() ? this.quote()?.amount : this.selected()?.amount ?? this.quote()?.amount);
@@ -53,7 +56,7 @@ export class OrderCheckoutComponent {
     });
   }
   async confirm(): Promise<void> {
-    if (!this.quote() || !this.accepted() || this.busy() || this.complete() || this.attempt() || (!this.free() && !this.selected()?.available)) return;
+    if (!this.quote() || !this.accepted() || this.busy() || this.couponBusy() || this.complete() || this.attempt() || (!this.free() && !this.selected()?.available)) return;
     this.busy.set(true); this.error.set('');
     try {
       if (this.free()) {
@@ -102,4 +105,13 @@ export class OrderCheckoutComponent {
     finally { this.busy.set(false); }
   }
   private async refreshLearning(): Promise<void> { await Promise.all([this.store.refreshPersonal(), this.cart.refresh()]); }
+  async reloadQuote(): Promise<void> {
+    this.busy.set(true); this.accepted.set(false); this.error.set('');
+    try {
+      const quote = await this.api.request<OrderQuote>('GET', `/checkout/orders/${encodeURIComponent(this.id())}/quote`);
+      this.quote.set(quote);
+      if (!quote.providers.some(p => p.id === this.provider() && p.available)) this.provider.set(quote.providers.find(p => p.available)?.id ?? '');
+    } catch (e) { this.error.set(e instanceof Error ? e.message : 'Unable to refresh the discounted total.'); }
+    finally { this.busy.set(false); }
+  }
 }

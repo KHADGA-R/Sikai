@@ -9,3 +9,4 @@
 .demo-badge{background:#e9f1ee;color:var(--sikai-teal)}
 @media(max-width:1050px) and (min-width:721px){.admin-brand app-brand-logo{width:130px}}
 @media(max-width:720px){.admin-brand{gap:6px;padding:8px 10px}.admin-brand app-brand-logo{width:120px}.admin-brand>small{font-size:8px}}
+.coupon-admin-link{display:block;color:#d9dfec;padding:13px 16px;margin-top:8px;border-radius:10px;font-size:13px}.coupon-admin-link:hover{background:#ffffff18}

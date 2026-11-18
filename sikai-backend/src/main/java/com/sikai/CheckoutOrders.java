@@ -13,8 +13,9 @@ public class CheckoutOrders {
     private final Db db;
     private final CatalogService catalog;
     private final NotificationService notifications;
-    private static final String SELECT="SELECT id,course_id AS \"courseId\",course_title AS \"courseTitle\",amount,currency,status,created_at AS \"createdAt\",completed_at AS \"completedAt\" FROM checkout_order";
-    public CheckoutOrders(Db db,CatalogService catalog,NotificationService notifications) { this.db=db; this.catalog=catalog; this.notifications=notifications; }
+    private final CouponService coupons;
+    private static final String SELECT="SELECT id,course_id AS \"courseId\",course_title AS \"courseTitle\",subtotal,discount_amount AS \"discountAmount\",coupon_code AS \"couponCode\",amount,currency,status,created_at AS \"createdAt\",completed_at AS \"completedAt\" FROM checkout_order";
+    public CheckoutOrders(Db db,CatalogService catalog,NotificationService notifications,CouponService coupons) { this.db=db; this.catalog=catalog; this.notifications=notifications; this.coupons=coupons; }
 
     public List<Map<String,Object>> items(String orderId) {
         return db.list("SELECT course_id AS \"courseId\",course_title AS title,amount FROM checkout_order_item WHERE order_id=? ORDER BY course_id",orderId);
@@ -43,8 +44,8 @@ public class CheckoutOrders {
         }
         Db.require(total.compareTo(new BigDecimal("9999999999.99"))<=0,BAD_REQUEST,"Checkout total exceeds the maximum supported amount");
         String title=courses.size()==1?courses.get(0).get("title").toString():courses.size()+" Sikai courses";
-        if(existing.isEmpty()) db.update("INSERT INTO checkout_order(id,user_id,course_id,course_title,amount,currency,status,created_at,basket_key) VALUES (?,?,?,?,?,'USD','pending',?,?)",id,user.id(),ids.get(0),title,total,System.currentTimeMillis(),key);
-        else { db.update("UPDATE checkout_order SET amount=?,course_title=? WHERE id=?",total,title,id); db.update("DELETE FROM checkout_order_item WHERE order_id=?",id); }
+        if(existing.isEmpty()) db.update("INSERT INTO checkout_order(id,user_id,course_id,course_title,amount,subtotal,currency,status,created_at,basket_key) VALUES (?,?,?,?,?,?,'USD','pending',?,?)",id,user.id(),ids.get(0),title,total,total,System.currentTimeMillis(),key);
+        else { coupons.release(id); db.update("UPDATE checkout_order SET amount=?,subtotal=?,discount_amount=0,coupon_id=NULL,coupon_code=NULL,course_title=? WHERE id=?",total,total,title,id); db.update("DELETE FROM checkout_order_item WHERE order_id=?",id); }
         for(var course:courses) db.update("INSERT INTO checkout_order_item(order_id,course_id,course_title,amount) VALUES (?,?,?,?)",id,course.get("id"),course.get("title"),course.get("price"));
         return owned(id,user);
     }
@@ -60,13 +61,16 @@ public class CheckoutOrders {
             Db.require(!db.exists("SELECT user_id FROM enrollment WHERE user_id=? AND course_id=?",user.id(),id),CONFLICT,"A course is already in your learning library. Review your cart");
             ensureNoOtherPayment(id,orderId,user); total=total.add((BigDecimal)item.get("amount"));
         }
-        Db.require(total.compareTo((BigDecimal)order.get("amount"))==0,CONFLICT,"Checkout total changed. Review your cart");
+        Db.require(total.compareTo((BigDecimal)order.get("subtotal"))==0,CONFLICT,"Checkout total changed. Review your cart");
+        Db.require(total.subtract((BigDecimal)order.get("discountAmount")).compareTo((BigDecimal)order.get("amount"))==0,CONFLICT,"Checkout discount changed. Review your total");
+        coupons.validate(orderId,user);
     }
     private void ensureNoOtherPayment(long courseId,String orderId,AuthService.User user) {
         Db.require(!db.exists("SELECT p.id FROM checkout_payment p JOIN checkout_order o ON o.id=p.order_id JOIN checkout_order_item i ON i.order_id=o.id WHERE o.user_id=? AND i.course_id=? AND o.id<>? AND p.status IN ('creating','pending')",user.id(),courseId,orderId),CONFLICT,"Another checkout with this course has a payment in progress. Resume it from your cart");
     }
     /** Caller holds the buyer lock; all items and the receipt commit in the same transaction. */
     public void fulfill(String orderId,AuthService.User user) {
+        coupons.complete(orderId,user);
         for(var item:items(orderId)) {
             long courseId=((Number)item.get("courseId")).longValue();
             if(!db.exists("SELECT user_id FROM enrollment WHERE user_id=? AND course_id=?",user.id(),courseId)) {
@@ -77,4 +81,6 @@ public class CheckoutOrders {
         }
         db.update("UPDATE checkout_order SET status='completed',completed_at=? WHERE id=?",System.currentTimeMillis(),orderId);
     }
+    public void reserveDiscount(String orderId,AuthService.User user) { coupons.reserve(orderId,user); }
+    public void releaseDiscount(String orderId) { coupons.release(orderId); }
 }

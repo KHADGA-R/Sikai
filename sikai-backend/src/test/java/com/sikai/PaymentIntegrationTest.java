@@ -114,6 +114,30 @@ class PaymentIntegrationTest {
     @Autowired PaymentGateway gateway;
     @Autowired Db db;
     @Autowired CheckoutOrders checkoutOrders;
+    @Autowired CouponService coupons;
+
+    @Test void discountedPaymentsReserveUsageAndHonorTheAgreedTotal() throws Exception {
+        String code="PAY_"+UUID.randomUUID().toString().substring(0,8);
+        coupons.create(new CouponService.Input(code,"percent",new BigDecimal("25"),BigDecimal.ZERO,null,null,true,1,1));
+        String buyer=register("student"),other=register("student"); long course=course();
+        String order=order(buyer,course),second=order(other,course);
+        call("PUT","/api/checkout/orders/"+order+"/coupon",buyer,Map.of("code",code),200);
+        call("PUT","/api/checkout/orders/"+second+"/coupon",other,Map.of("code",code),200);
+        var body=Map.of("provider","khalti","expectedAmount",750,"expectedCurrency","NPR");
+        var payment=call("POST","/api/checkout/orders/"+order+"/payments",buyer,body,200);
+        assertThat(initiate.get().get("amount").asLong()).isEqualTo(75000);
+        call("DELETE","/api/checkout/orders/"+order+"/coupon",buyer,null,409);
+        call("POST","/api/checkout/orders/"+second+"/payments",other,body,400);
+        state.set("User canceled");
+        verify(buyer,payment.get("id").asText(),Map.of(),200);
+        assertThat(db.exists("SELECT order_id FROM coupon_redemption WHERE order_id=?",order)).isFalse();
+        var next=call("POST","/api/checkout/orders/"+second+"/payments",other,body,200);
+        db.update("UPDATE discount_coupon SET active=FALSE WHERE code=?",code);
+        state.set("Completed"); paid.set(new BigDecimal("75000"));
+        assertThat(verify(other,next.get("id").asText(),Map.of(),200).get("status").asText()).isEqualTo("completed");
+        assertThat(call("GET","/api/me/enrollments",other,null,200)).hasSize(1);
+        assertThat(db.one("SELECT status FROM coupon_redemption WHERE order_id=?",second).get("status")).isEqualTo("completed");
+    }
 
     JsonNode call(String method,String path,String token,Object body,int status) throws Exception {
         var request=switch(method) { case "POST" -> post(path); case "PUT" -> put(path); case "DELETE" -> delete(path); default -> get(path); };

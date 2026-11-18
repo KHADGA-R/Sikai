@@ -111,3 +111,24 @@ Subject must be an existing category. Bio is up to 1,000 characters, languages 1
 Booking timezone is a valid IANA zone such as `Asia/Kathmandu`, `America/Los_Angeles` or `UTC`. Learning goals are up to 1,000 characters. For rescheduling, provide the old booking ID as `replacing`. The old booking is cancelled and new booking created in the same transaction, after all checks pass. Students cannot book themselves or double-book a slot; neither participant can overlap any confirmed class, including across student and teacher roles.
 
 Booking creation returns `{"id":"uuid","status":"confirmed","email":{"sent":false,"message":"..."}}`. SMTP disabled or unavailable does not roll back booking. Public slots deliberately omit private meeting links. Booking/message/email authorization comes from stored participants, never a submitted user ID. The confirmation endpoint ignores arbitrary email or class-detail fields; it loads the real record and sends only to the saved student email.
+# Discount coupons
+
+Administrator endpoints (admin role required):
+
+- `GET /api/admin/coupons`: list codes, terms and completed/reserved usage counts.
+- `POST /api/admin/coupons`: create immutable terms with `code`, `discountType` (`percent` or
+  `fixed`), `discountValue`, `minimumSubtotal`, `active`, `perUserLimit` (1–1000), optional
+  `startsAt`/`expiresAt` (epoch milliseconds) and optional `maxRedemptions`.
+- `PUT /api/admin/coupons/{id}/status` with `{ "active": false }`: disable or enable a code.
+
+Authenticated checkout endpoints:
+
+- `PUT /api/checkout/orders/{id}/coupon` with `{ "code": "LEARN10" }`: apply one code to an
+  owned, unpaid order and return its updated payment quote. Codes are case insensitive.
+- `DELETE /api/checkout/orders/{id}/coupon`: remove the code and return the updated quote.
+
+Order/quote responses include `subtotal`, `discountAmount` and `couponCode`. Quote
+`originalAmount` is the discounted USD amount; provider totals use that net amount. Discounts
+cannot exceed the subtotal. Payment initiation and zero-total completion recheck eligibility
+and serialize usage reservations. Pending payments prevent coupon changes. Provider-confirmed
+failure releases reserved usage; settlement honors the reserved price after expiry/disable.

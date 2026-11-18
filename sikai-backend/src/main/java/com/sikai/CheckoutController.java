@@ -47,6 +47,7 @@ public class CheckoutController {
         Db.require(!db.exists("SELECT id FROM checkout_payment WHERE order_id=? AND status IN ('creating','pending')",id),CONFLICT,"A payment is in progress. Verify its status before completing checkout");
         orders.validate(id,user);
         Db.require(((BigDecimal)order.get("amount")).signum()==0,CONFLICT,"Paid checkout requires verified payment");
+        orders.reserveDiscount(id,user);
         orders.fulfill(id,user); return orders.owned(id,user);
     }
 }

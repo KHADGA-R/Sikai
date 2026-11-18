@@ -7,6 +7,7 @@ import { AuthService } from '../core/auth.service';
 import { ApiService } from '../core/api.service';
 import { LearnHubStore } from '../core/store.service';
 import { CourseArtworkComponent } from './course-artwork.component';
+import { CouponEntryComponent } from '../shared/coupon-entry.component';
 
 interface CheckoutQuote {
   amount: number; currency: string; originalAmount: number; originalCurrency: string; exchangeRate: number;
@@ -20,7 +21,7 @@ interface Payment {
 
 @Component({
   standalone: true,
-  imports: [RouterLink, CurrencyPipe, CourseArtworkComponent],
+  imports: [RouterLink, CurrencyPipe, CourseArtworkComponent, CouponEntryComponent],
   templateUrl: './checkout.component.html',
   styleUrl: './checkout.component.css'
 })
@@ -37,6 +38,7 @@ export class CheckoutComponent {
   readonly error = signal('');
   readonly confirmed = signal(false);
   readonly accepted = signal(false);
+  readonly couponBusy = signal(false);
   readonly quote = signal<CheckoutQuote | null>(null);
   readonly provider = signal('');
   readonly attempt = signal<string | null>(null);
@@ -71,7 +73,7 @@ export class CheckoutComponent {
 
   async confirm(): Promise<void> {
     const course = this.course();
-    if (!course || !this.quote() || !this.accepted() || this.busy() || this.store.isEnrolled(course.id)) return;
+    if (!course || !this.quote() || !this.accepted() || this.busy() || this.couponBusy() || this.store.isEnrolled(course.id)) return;
     if (!course.isFree && (!this.selectedPayment()?.available || !this.quote()?.paymentAvailable || this.attempt())) return;
     const id = course.id;
     this.busy.set(true); this.error.set('');

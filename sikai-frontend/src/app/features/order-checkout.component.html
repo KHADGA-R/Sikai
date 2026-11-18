@@ -11,7 +11,7 @@
       <div class="checkout-grid"><div class="checkout-main">
         <section class="checkout-panel"><h2><span class="step-number">1</span> Your account</h2><div class="account-row"><span class="account-avatar" aria-hidden="true">{{auth.user()?.name?.charAt(0)}}</span><div><strong>{{auth.user()?.name}}</strong><p>{{auth.user()?.email}}</p></div><span class="account-label">Signed in</span></div><p class="small-note">All courses will be added to this account.</p></section>
         <section class="checkout-panel"><h2><span class="step-number">2</span> {{free() ? 'Complete enrollment' : 'Payment'}}</h2>
-          @if (free()) {<div class="payment-notice"><strong>All learning. No payment needed.</strong><p>Every course in this order is free.</p></div>}
+          @if (free()) {<div class="payment-notice"><strong>{{q.discountAmount ? 'Your total is covered' : 'All learning. No payment needed.'}}</strong><p>{{q.discountAmount ? 'Your promo code covers the order. No payment details are needed.' : 'Every course in this order is free.'}}</p></div>}
           @else {
             <fieldset class="payment-options" [disabled]="busy() || !!attempt()"><legend>Choose one payment method for your order</legend>
               @for (p of q.providers; track p.id) {<label [class.selected]="provider() === p.id" [class.unavailable]="!p.available"><input type="radio" name="payment-provider" [value]="p.id" [checked]="provider() === p.id" [disabled]="!p.available" (change)="provider.set(p.id); accepted.set(false)"><strong>{{p.label}}</strong><span>{{p.available ? 'Pay in ' + p.currency : p.id === 'paypal' ? 'Available soon' : 'Unavailable'}}</span></label>}
@@ -25,9 +25,10 @@
         </section>
       </div><aside class="checkout-panel order-summary"><h2>Order summary · {{q.items.length}} courses</h2>
         <div class="order-items">@for (item of q.items; track item.courseId) {<div class="order-course"><div class="order-art teal"><app-course-artwork [courseId]="item.courseId" /></div><div><h3>{{item.title}}</h3><p>{{item.amount === 0 ? 'Free' : (item.amount | currency:'USD')}}</p></div></div>}</div>
-        <dl><div><dt>Catalog subtotal</dt><dd>{{q.originalAmount | currency:'USD'}}</dd></div><div class="order-total"><dt>Total</dt><dd>{{total() | currency:(currency() ?? 'USD'):'code'}}</dd></div></dl>
+        <app-coupon-entry [orderId]="q.orderId" [couponCode]="q.couponCode ?? null" [locked]="busy() || !!attempt()" (busyChange)="couponBusy.set($event); accepted.set(false)" (changed)="reloadQuote()" />
+        <dl><div><dt>Catalog subtotal</dt><dd>{{(q.subtotal ?? q.originalAmount) | currency:'USD'}}</dd></div>@if(q.discountAmount){<div class="discount-row"><dt>Discount ({{q.couponCode}})</dt><dd>-{{q.discountAmount | currency:'USD'}}</dd></div>}<div class="order-total"><dt>Total</dt><dd>{{total() | currency:(currency() ?? 'USD'):'code'}}</dd></div></dl>
         @if (error()) {<p class="error-note" role="alert">{{error()}}</p>}
-        <button class="button primary full-btn" [disabled]="busy() || !accepted() || !!attempt() || (!free() && !selected()?.available)" (click)="confirm()">{{busy() ? 'Processing...' : free() ? 'Complete free enrollment' : 'Pay with ' + (selected()?.label ?? 'your payment provider')}}</button><p class="summary-note">{{free() ? 'No payment required.' : 'All courses unlock after payment is confirmed.'}}</p><a class="browse-link" routerLink="/cart">Edit courses in your cart</a>
+        <button class="button primary full-btn" [disabled]="busy() || couponBusy() || !accepted() || !!attempt() || (!free() && !selected()?.available)" (click)="confirm()">{{busy() ? 'Processing...' : free() ? (q.discountAmount ? 'Complete enrollment' : 'Complete free enrollment') : 'Pay with ' + (selected()?.label ?? 'your payment provider')}}</button><p class="summary-note">{{free() ? 'No payment required.' : 'All courses unlock after payment is confirmed.'}}</p><a class="browse-link" routerLink="/cart">Edit courses in your cart</a>
       </aside></div>
     }
   } @else {<div class="checkout-state"><h1>Checkout unavailable</h1><p role="alert">{{error() || 'This checkout could not be found.'}}</p><a class="button primary" routerLink="/cart">Return to cart</a></div>}

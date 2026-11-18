@@ -31,6 +31,60 @@ class PlatformIntegrationTest {
         return request("POST","/api/auth/register",null,Map.of("name","Test "+role,"email",UUID.randomUUID()+"@test.example","password","Pass12345!","role",role),201).get("token").asText();
     }
     private Map<String,Object> course(boolean free) { return Map.of("title","Nepali foundations","description","Learn conversational Nepali","category","Languages","subcategory","Nepali","price",free?0:10,"level","BEGINNER","durationHours",2,"emoji","N","accent","teal","published",true); }
+    private String admin() throws Exception {
+        return request("POST","/api/auth/login",null,Map.of("email","admin@test.example","password","AdminPass123!"),200).get("token").asText();
+    }
+    private Map<String,Object> coupon(String type,int value) {
+        return new HashMap<>(Map.of("code","SAVE_"+UUID.randomUUID().toString().substring(0,8),"discountType",type,"discountValue",value,"minimumSubtotal",0,"active",true,"perUserLimit",1));
+    }
+    @Test void couponsAreAdminManagedPrivateAndServerPriced() throws Exception {
+        String admin=admin(),student=register("student"),other=register("student"),teacher=register("instructor");
+        var data=coupon("percent",25);
+        request("POST","/api/admin/coupons",student,data,403);
+        var invalid=coupon("percent",101); request("POST","/api/admin/coupons",admin,invalid,400);
+        var created=request("POST","/api/admin/coupons",admin,data,201);
+        long first=request("POST","/api/instructor/courses",teacher,course(false),201).get("id").asLong();
+        long second=request("POST","/api/instructor/courses",teacher,course(false),201).get("id").asLong();
+        String order=request("POST","/api/checkout/orders",student,Map.of("courseIds",List.of(first,second)),200).get("id").asText();
+        String path="/api/checkout/orders/"+order+"/coupon";
+        request("PUT",path,other,Map.of("code",created.get("code").asText()),404);
+        var quote=request("PUT",path,student,Map.of("code"," "+created.get("code").asText().toLowerCase()+" ","discountAmount",20),200);
+        assertThat(quote.get("subtotal").decimalValue()).isEqualByComparingTo("20");
+        assertThat(quote.get("discountAmount").decimalValue()).isEqualByComparingTo("5");
+        assertThat(quote.get("originalAmount").decimalValue()).isEqualByComparingTo("15");
+        request("PUT",path,student,Map.of("code","NOT_REAL"),400);
+        assertThat(request("DELETE",path,student,null,200).get("originalAmount").decimalValue()).isEqualByComparingTo("20");
+        request("PUT","/api/admin/coupons/"+created.get("id").asText()+"/status",admin,Map.of("active",false),200);
+        request("PUT",path,student,Map.of("code",created.get("code").asText()),400);
+        var fixed=request("POST","/api/admin/coupons",admin,coupon("fixed",50),201);
+        assertThat(request("PUT",path,student,Map.of("code",fixed.get("code").asText()),200).get("originalAmount").decimalValue()).isZero();
+        request("POST","/api/checkout/orders/"+order+"/complete",student,null,200);
+        request("POST","/api/checkout/orders/"+order+"/complete",student,null,200);
+        assertThat(request("GET","/api/me/enrollments",student,null,200)).hasSize(2);
+        request("DELETE",path,student,null,409);
+        long third=request("POST","/api/instructor/courses",teacher,course(false),201).get("id").asLong();
+        String another=request("POST","/api/checkout/orders",student,Map.of("courseId",third),200).get("id").asText();
+        request("PUT","/api/checkout/orders/"+another+"/coupon",student,Map.of("code",fixed.get("code").asText()),400);
+    }
+    @Test void couponEligibilityAndGlobalLimitAreRecheckedAtCompletion() throws Exception {
+        String admin=admin(),teacher=register("instructor"),buyer=register("student"),other=register("student");
+        long course=request("POST","/api/instructor/courses",teacher,course(false),201).get("id").asLong();
+        String order=request("POST","/api/checkout/orders",buyer,Map.of("courseId",course),200).get("id").asText();
+        for(String rule:List.of("expiresAt","startsAt","minimumSubtotal")) {
+            var data=coupon("percent",100);
+            data.put(rule,rule.equals("expiresAt")?System.currentTimeMillis()-60000:rule.equals("startsAt")?System.currentTimeMillis()+60000:20);
+            String code=request("POST","/api/admin/coupons",admin,data,201).get("code").asText();
+            request("PUT","/api/checkout/orders/"+order+"/coupon",buyer,Map.of("code",code),400);
+        }
+        var data=coupon("percent",100); data.put("maxRedemptions",1);
+        String code=request("POST","/api/admin/coupons",admin,data,201).get("code").asText();
+        String second=request("POST","/api/checkout/orders",other,Map.of("courseId",course),200).get("id").asText();
+        request("PUT","/api/checkout/orders/"+order+"/coupon",buyer,Map.of("code",code),200);
+        request("PUT","/api/checkout/orders/"+second+"/coupon",other,Map.of("code",code),200);
+        request("POST","/api/checkout/orders/"+order+"/complete",buyer,null,200);
+        request("POST","/api/checkout/orders/"+second+"/complete",other,null,400);
+        assertThat(request("GET","/api/me/enrollments",other,null,200)).isEmpty();
+    }
     @Test void checkoutOrdersArePrivateIdempotentAndServerPriced() throws Exception {
         String teacher=register("instructor"),buyer=register("student"),other=register("student");
         long id=request("POST","/api/instructor/courses",teacher,course(true),201).get("id").asLong();

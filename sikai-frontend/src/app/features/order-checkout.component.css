@@ -1,1 +1,2 @@
 .order-items{display:grid;gap:20px;margin-bottom:24px;max-height:460px;overflow:auto}.order-items .order-course{padding-bottom:16px;border-bottom:1px solid var(--line)}.order-items .order-art{width:64px;height:64px}.order-items h3{font-size:15px;line-height:1.45}.purchased-courses{display:grid;gap:14px;margin-top:28px}.purchased-courses a{color:var(--sikai-red);line-height:1.5}.order-items p{font-weight:700}
+.discount-row{color:#23705a}.discount-row dd{white-space:nowrap}

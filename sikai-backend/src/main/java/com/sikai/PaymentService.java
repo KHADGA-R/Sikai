@@ -33,6 +33,7 @@ public class PaymentService {
         var active=db.list("SELECT p.*,o.amount AS original_amount FROM checkout_payment p JOIN checkout_order o ON o.id=p.order_id WHERE o.user_id=? AND o.id=? AND p.status IN ('creating','pending') ORDER BY p.created_at DESC",user.id(),orderId);
         var result=quoteData(((Number)order.get("courseId")).longValue(),user,(BigDecimal)order.get("amount"),active);
         result.put("orderId",orderId); result.put("items",order.get("items")); result.put("status",order.get("status"));
+        result.put("subtotal",order.get("subtotal")); result.put("discountAmount",order.get("discountAmount")); result.put("couponCode",order.get("couponCode"));
         return result;
     }
     private Map<String,Object> quoteData(long courseId,AuthService.User user,BigDecimal usd,List<Map<String,Object>> active) {
@@ -82,6 +83,7 @@ public class PaymentService {
         Db.require(amount.signum()>0,BAD_REQUEST,"Use free checkout for this course");
         Db.require(amount.compareTo(expectedAmount)==0,CONFLICT,"Checkout total changed. Refresh and review the new total");
         Db.require(!provider.equals("khalti") || amount.compareTo(new BigDecimal("10"))>=0,BAD_REQUEST,"Khalti requires at least NPR 10");
+        orders.reserveDiscount(orderId,user);
         String id=Db.id();
         db.update("INSERT INTO checkout_payment(id,order_id,course_id,provider,amount,currency,status,created_at) VALUES (?,?,?,?,?,?,'creating',?)",id,orderId,order.get("course_id"),provider,amount,currency,System.currentTimeMillis());
         return new Reservation(db.one("SELECT * FROM checkout_payment WHERE id=?",id),true);
@@ -131,7 +133,10 @@ public class PaymentService {
         if("completed".equals(verified.status())) {
             orders.fulfill(payment.get("order_id").toString(),user);
             db.update("UPDATE checkout_payment SET status='completed',transaction_id=? WHERE id=?",verified.transactionId(),id);
-        } else db.update("UPDATE checkout_payment SET status=? WHERE id=?",verified.status(),id);
+        } else {
+            db.update("UPDATE checkout_payment SET status=? WHERE id=?",verified.status(),id);
+            if("failed".equals(verified.status())) orders.releaseDiscount(payment.get("order_id").toString());
+        }
         return response(owned(id,user));
     }
     private void lock(AuthService.User user) { db.one("SELECT id FROM app_user WHERE id=? FOR UPDATE",user.id()); }

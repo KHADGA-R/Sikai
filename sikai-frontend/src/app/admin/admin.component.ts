@@ -15,7 +15,7 @@ function emptyCourse(): Course {
 
 @Component({ standalone: true, imports: [FormsModule, RouterLink, BrandLogoComponent], styleUrl: './admin.component.css', template: `
 <div class="admin-shell">
-  <aside class="admin-sidebar"><a class="admin-brand" routerLink="/admin"><app-brand-logo /><small>ADMIN PORTAL</small></a><div class="sidebar-label">WORKSPACE</div><a class="sidebar-active" routerLink="/admin">▤ &nbsp; Course management</a><div class="sidebar-bottom">Server administration<br><a routerLink="/">Open user portal ↗</a></div></aside>
+  <aside class="admin-sidebar"><a class="admin-brand" routerLink="/admin"><app-brand-logo /><small>ADMIN PORTAL</small></a><div class="sidebar-label">WORKSPACE</div><a class="sidebar-active" routerLink="/admin">▤ &nbsp; Course management</a><a class="coupon-admin-link" routerLink="/admin/coupons">Discount coupons</a><div class="sidebar-bottom">Server administration<br><a routerLink="/">Open user portal ↗</a></div></aside>
   <main class="admin-main">
     <header class="admin-topbar"><span>Workspace / <strong>Courses</strong></span><span class="demo-badge">Administrator</span></header>
     <section class="admin-content">
