@@ -2,6 +2,7 @@ import { Injectable, computed, effect, inject, signal, untracked } from '@angula
 import { Router } from '@angular/router';
 import { AuthService } from './auth.service';
 import { ApiService } from './api.service';
+import { NotificationService } from './notification.service';
 import { ApiCourse, ApiTopic, normalizeCourse } from './api-models';
 import { Course } from './models';
 import { curriculumLessons } from './server-store';
@@ -9,6 +10,7 @@ import { curriculumLessons } from './server-store';
 /** Shared server state. Private caches are cleared whenever the signed-in account changes. */
 @Injectable({ providedIn: 'root' })
 export class LearnHubStore {
+  private readonly notifications = inject(NotificationService);
   private readonly api = inject(ApiService);
   private readonly auth = inject(AuthService);
   private readonly router = inject(Router);
@@ -74,6 +76,7 @@ export class LearnHubStore {
       ]);
       if (generation !== this.generation) return;
       this.wishedCourses.set(wishlist.map(normalizeCourse)); this.enrolledCourses.set(enrolled.map(normalizeCourse)); this.progress.set(progress);
+      void this.notifications.refresh(true);
       // Real lesson IDs are needed to compute progress after lesson removal or curriculum edits.
       await Promise.all(enrolled.map(c => this.loadContent(c.id, generation).catch(e => { if (generation === this.generation) this.fail(e); return []; })));
     } catch (e) { if (generation === this.generation) this.fail(e); }
@@ -151,6 +154,7 @@ export class LearnHubStore {
       await this.api.request(remove ? 'DELETE' : 'PUT', `/me/progress/${courseId}/lessons/${lessonId}`);
       if (generation !== this.generation) return;
       this.progress.update(all => ({ ...all, [courseId]: remove ? (all[courseId] ?? []).filter(id => id !== lessonId) : [...(all[courseId] ?? []), lessonId] }));
+      void this.notifications.refresh(true);
     });
   }
 }

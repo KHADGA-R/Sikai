@@ -1,6 +1,9 @@
 import { adminGuard, authGuard, instructorGuard } from './core/auth.guard';
 import { Routes } from '@angular/router';
 export const routes: Routes = [
+  { path: 'cart', canActivate: [authGuard], loadComponent: () => import('./features/cart.component').then(m => m.CartComponent), title: 'Your cart | Sikai' },
+  { path: 'checkout/orders/:orderId/payment/:attempt', canActivate: [authGuard], loadComponent: () => import('./features/order-checkout.component').then(m => m.OrderCheckoutComponent), title: 'Verify payment | Sikai' },
+  { path: 'checkout/orders/:orderId', canActivate: [authGuard], loadComponent: () => import('./features/order-checkout.component').then(m => m.OrderCheckoutComponent), title: 'Checkout | Sikai' },
   { path: 'checkout/:id/payment/:attempt', canActivate: [authGuard], loadComponent: () => import('./features/checkout.component').then(m => m.CheckoutComponent), title: 'Verify payment | Sikai' },
   { path: 'checkout/:id', canActivate: [authGuard], loadComponent: () => import('./features/checkout.component').then(m => m.CheckoutComponent), title: 'Checkout | Sikai' },
   { path: 'my-progress', canActivate: [authGuard], loadComponent: () => import('./features/learning-dashboard.component').then(m => m.LearningDashboardComponent), title: 'My Progress | Sikai' },

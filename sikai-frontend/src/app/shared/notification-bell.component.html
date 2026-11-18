@@ -1,0 +1,20 @@
+<button #bell class="notification-bell" type="button" [attr.aria-label]="'Notifications, ' + notifications.unreadCount() + ' unread'" [attr.aria-expanded]="open()" aria-controls="notification-panel" (click)="toggle()">
+  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"/><path d="M10 21h4"/></svg>
+  @if (notifications.unreadCount() > 0) {<span class="notification-badge" aria-hidden="true">{{notifications.unreadCount() > 99 ? '99+' : notifications.unreadCount()}}</span>}
+</button>
+@if (open()) {
+  <section id="notification-panel" class="notification-panel" aria-labelledby="notification-heading">
+    <header class="notification-heading"><div><span class="notification-eyebrow">STAY IN THE LOOP</span><h2 id="notification-heading">Notifications <span>{{notifications.unreadCount()}} unread</span></h2></div><button type="button" class="notification-close" aria-label="Close notifications" (click)="escape()">×</button></header>
+    <div class="notification-toolbar"><span>Latest activity</span><button type="button" [disabled]="notifications.unreadCount() === 0 || notifications.markingAll() || notifications.pending().length > 0" (click)="notifications.markAllRead()">{{notifications.markingAll() ? 'Updating...' : 'Mark all as read'}}</button></div>
+    @if (notifications.error()) {<div class="notification-error" role="alert">{{notifications.error()}} <button type="button" (click)="notifications.refresh(true)">Try again</button></div>}
+    <div class="notification-scroll" [attr.aria-busy]="notifications.loading()">
+      @if (notifications.items().length) {
+        <ul class="notification-list">@for (item of notifications.items(); track item.id) {
+          <li [class.unread]="item.readAt === null"><button type="button" class="notification-item" [disabled]="notifications.pending().includes(item.id) || notifications.markingAll()" (click)="activate(item)"><span class="notification-icon" aria-hidden="true">{{icon(item.type)}}</span><span class="notification-copy"><strong>{{item.title}}</strong><span class="notification-body">{{item.body}}</span><time [attr.datetime]="item.createdAt | date:'yyyy-MM-ddTHH:mm:ssZ'">{{item.createdAt | date:'MMM d, h:mm a'}}</time></span>@if(item.readAt === null){<span class="unread-dot" aria-label="Unread"></span>}</button></li>
+        }</ul>
+      } @else if (!notifications.loading() && !notifications.error()) {<div class="notification-empty"><span aria-hidden="true">✓</span><h3>You're all caught up</h3><p>Course updates, enrollments and class activity will appear here.</p></div>}
+      @if (notifications.loading()) {<p class="notification-loading" role="status">Loading notifications...</p>}
+    </div>
+    <footer class="notification-footer">@if (notifications.hasMore()) {<button type="button" [disabled]="notifications.loading()" (click)="notifications.loadMore()">Show more notifications</button>} @else {<span>Your learning, all in one place.</span>}</footer>
+  </section>
+}

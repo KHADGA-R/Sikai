@@ -21,9 +21,10 @@ public class LiveService {
     static final String SLOTS="SELECT s.id,s.teacher_id AS \"teacherId\",s.start_at AS start,s.end_at AS \"end\",s.closed FROM live_slot s";
     static final String BOOKINGS="SELECT b.id,b.slot_id AS \"slotId\",b.student_id AS \"studentId\",u.name AS \"studentName\",u.email AS \"studentEmail\",b.goals,b.timezone,b.status FROM booking b JOIN app_user u ON u.id=b.student_id";
     final Db db; private final CatalogService catalog;
+    private final NotificationService notifications;
 
     /** Share the database and catalog authorization rules with transactional live scheduling. */
-    public LiveService(Db db,CatalogService catalog) { this.db=db; this.catalog=catalog; }
+    public LiveService(Db db,CatalogService catalog,NotificationService notifications) { this.db=db; this.catalog=catalog; this.notifications=notifications; }
 
     /** List teacher profiles with names derived from their owning user accounts. */
     public Object teachers() { return db.list(TEACHERS+" ORDER BY u.name"); }
@@ -69,7 +70,12 @@ public class LiveService {
     }
 
     /** Serialize and authorize a meeting-link change before persisting a validated HTTPS URL. */
-    @Transactional public void meeting(String id,String url,AuthService.User user) { lock(); slotOwner(id,user); safeUrl(url); db.update("UPDATE live_slot SET meeting_url=? WHERE id=?",url.trim(),id); }
+    @Transactional public void meeting(String id,String url,AuthService.User user) {
+        lock(); slotOwner(id,user); safeUrl(url);
+        String before=db.one("SELECT meeting_url FROM live_slot WHERE id=?",id).get("meeting_url").toString();
+        db.update("UPDATE live_slot SET meeting_url=? WHERE id=?",url.trim(),id);
+        if(!before.equals(url.trim())) for(var booking:db.list("SELECT id FROM booking WHERE slot_id=? AND status='confirmed'",id)) notifications.liveEvent(booking.get("id").toString(),"meeting_updated",Db.id(),user.id());
+    }
 
     /**
      * Lock scheduling, authorize any replacement and check both participants' conflicts before
@@ -82,15 +88,20 @@ public class LiveService {
         Db.require(start>System.currentTimeMillis() && !Boolean.TRUE.equals(slot.get("closed")),CONFLICT,"Slot is closed or has started");
         String owner=(String)slot.get("owner_id"); Db.require(!owner.equals(user.id()),CONFLICT,"You cannot book your own class");
         String replacing=input.replacing==null?"":input.replacing;
+        Map<String,Object> previous=null;
         if(!replacing.isEmpty()) {
             var old=participant(replacing,user);
+            previous=old;
             Db.require(old.get("student_id").equals(user.id()) && old.get("status").equals("confirmed") && ((Number)old.get("start_at")).longValue()>System.currentTimeMillis(),CONFLICT,"Only your upcoming confirmed bookings can be rescheduled");
             Db.require(!old.get("slot_id").equals(input.slotId),CONFLICT,"Choose a different slot");
         }
         Db.require(!db.exists("SELECT id FROM booking WHERE slot_id=? AND status='confirmed' AND id<>?",input.slotId,replacing),CONFLICT,"Slot already booked");
         Db.require(!busy(user.id(),start,end,replacing) && !busy(owner,start,end,replacing),CONFLICT,"Booking overlaps another class for you or the teacher");
         if(!replacing.isEmpty()) db.update("UPDATE booking SET status='cancelled' WHERE id=?",replacing);
-        String id=Db.id(); db.update("INSERT INTO booking(id,slot_id,student_id,goals,timezone,status) VALUES (?,?,?,?,?,'confirmed')",id,input.slotId,user.id(),input.goals.trim(),input.timezone); return id;
+        String id=Db.id(); db.update("INSERT INTO booking(id,slot_id,student_id,goals,timezone,status) VALUES (?,?,?,?,?,'confirmed')",id,input.slotId,user.id(),input.goals.trim(),input.timezone);
+        notifications.liveEvent(id,replacing.isEmpty()?"live_booked":"live_rescheduled",id,user.id());
+        if(previous!=null && !owner.equals(previous.get("owner_id"))) notifications.liveEvent(replacing,"live_cancelled",id+"-previous",user.id());
+        return id;
     }
 
     /**
@@ -118,6 +129,7 @@ public class LiveService {
         lock(); var booking=participant(id,user);
         Db.require(booking.get("status").equals("confirmed") && ((Number)booking.get("start_at")).longValue()>System.currentTimeMillis(),CONFLICT,"Only upcoming confirmed classes can be cancelled");
         db.update("UPDATE booking SET status='cancelled' WHERE id=?",id);
+        notifications.liveEvent(id,"live_cancelled",id,user.id());
     }
 
     /** Serialize conversation writes and persist text only for a participant of a confirmed booking. */
@@ -125,6 +137,7 @@ public class LiveService {
         lock(); var booking=participant(id,user); Db.require(booking.get("status").equals("confirmed"),CONFLICT,"Booking is not confirmed");
         Db.require(text!=null && !text.trim().isEmpty() && text.length()<=500,BAD_REQUEST,"Enter 1..500 message characters");
         String mid=Db.id(); long now=System.currentTimeMillis(); db.update("INSERT INTO class_message(id,booking_id,sender_id,text,sent_at) VALUES (?,?,?,?,?)",mid,id,user.id(),text.trim(),now);
+        notifications.liveEvent(id,"live_message",mid,user.id());
         return Map.of("id",mid,"senderId",user.id(),"senderName",user.name(),"text",text.trim(),"sentAt",now);
     }
 

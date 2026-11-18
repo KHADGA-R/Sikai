@@ -22,9 +22,10 @@ public class CatalogService {
         @NotBlank @Size(max=40) String emoji,@NotNull @Pattern(regexp="violet|teal|pink|blue|green|orange") String accent,boolean published,@Min(1) @Max(12) Integer grade) {}
     public static final String SELECT="SELECT c.id,c.title,c.description,u.name AS instructor,c.category,c.subcategory,c.price,(c.price=0) AS \"isFree\",c.level,c.rating,c.duration_hours AS \"durationHours\",(SELECT COUNT(*) FROM lesson l JOIN topic t ON t.id=l.topic_id WHERE t.course_id=c.id) AS lessons,c.emoji,c.accent,c.published,c.grade,c.owner_id AS \"ownerId\" FROM course c JOIN app_user u ON u.id=c.owner_id";
     final Db db; private final ObjectMapper mapper;
+    private final NotificationService notifications;
 
     /** Connect the catalog to parameterized SQL and the JSON taxonomy reader. */
-    public CatalogService(Db db,ObjectMapper mapper) { this.db=db; this.mapper=mapper; }
+    public CatalogService(Db db,ObjectMapper mapper,NotificationService notifications) { this.db=db; this.mapper=mapper; this.notifications=notifications; }
 
     /**
      * Read the packaged taxonomy resource; a missing or malformed resource is a server configuration
@@ -78,7 +79,10 @@ public class CatalogService {
     /** Validate ownership and replace editable catalog fields within a database transaction. */
     @Transactional public void update(long id,CourseInput c,AuthService.User user) {
         owner(id,user); validate(c);
+        var before=db.one("SELECT * FROM course WHERE id=? FOR UPDATE",id);
         db.update("UPDATE course SET title=?,description=?,category=?,subcategory=?,price=?,level=?,duration_hours=?,emoji=?,accent=?,published=?,grade=? WHERE id=?",c.title.trim(),c.description.trim(),c.category,c.subcategory,c.price,c.level,c.durationHours,c.emoji,c.accent,c.published,c.grade,id);
+        var after=db.one("SELECT * FROM course WHERE id=?",id);
+        if(!before.equals(after)) notifications.courseUpdated(id,Boolean.TRUE.equals(before.get("published")) && !c.published());
     }
 
     /** Apply cross-field category rules and reject non-finite duration values. */

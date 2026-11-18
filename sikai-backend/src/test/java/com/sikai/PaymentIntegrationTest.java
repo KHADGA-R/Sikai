@@ -29,6 +29,8 @@ class PaymentIntegrationTest {
     static final AtomicInteger starts=new AtomicInteger();
     static final AtomicReference<JsonNode> initiate=new AtomicReference<>();
     static final AtomicBoolean rejectStart=new AtomicBoolean(false);
+    static final AtomicInteger esewaStarts=new AtomicInteger();
+    static final Set<String> esewaIds=java.util.concurrent.ConcurrentHashMap.newKeySet();
     static final AtomicReference<String> paypalState=new AtomicReference<>("CREATED");
     static final AtomicReference<String> paypalCurrency=new AtomicReference<>("USD");
     static final AtomicReference<String> paypalAmount=new AtomicReference<>("10.00");
@@ -43,7 +45,18 @@ class PaymentIntegrationTest {
             server.createContext("/",exchange->{
                 Object response;
                 String path=exchange.getRequestURI().getPath();
-                if(path.equals("/v1/oauth2/token")) {
+                if(path.equals("/form/")) {
+                    esewaStarts.incrementAndGet();
+                    var form=new HashMap<String,String>();
+                    for(String entry:new String(exchange.getRequestBody().readAllBytes(),StandardCharsets.UTF_8).split("&")) {
+                        var pair=entry.split("=",2); form.put(java.net.URLDecoder.decode(pair[0],StandardCharsets.UTF_8),java.net.URLDecoder.decode(pair[1],StandardCharsets.UTF_8));
+                    }
+                    String id=form.get("transaction_uuid");
+                    if(esewaIds.add(id)) {
+                        exchange.getResponseHeaders().add("Location","https://rc-epay.esewa.com.np/epay?bookingId="+id); exchange.sendResponseHeaders(302,-1); exchange.close(); return;
+                    }
+                    response=Map.of("error_message","Duplicate transaction UUID.","code",0);
+                } else if(path.equals("/v1/oauth2/token")) {
                     response=Map.of("access_token","paypal-test-access","expires_in",3600);
                 } else if(path.startsWith("/v2/checkout/orders")) {
                     String reference;
@@ -89,19 +102,21 @@ class PaymentIntegrationTest {
         String base="http://127.0.0.1:"+server.getAddress().getPort()+"/";
         registry.add("sikai.payments.khalti.api-url",()->base);
         registry.add("sikai.payments.esewa.status-url",()->base+"status/");
+        registry.add("sikai.payments.esewa.form-url",()->base+"form/");
         registry.add("sikai.payments.paypal.api-url",()->base);
         registry.add("sikai.payments.paypal.client-id",()->"paypal-test-client");
         registry.add("sikai.payments.paypal.enabled",()->"true");
         registry.add("sikai.payments.paypal.client-secret",()->"paypal-test-secret");
     }
     @AfterAll static void stop() { server.stop(0); }
-    @BeforeEach void reset() { state.set("Completed"); paid.set(new BigDecimal("100000")); starts.set(0); rejectStart.set(false); paypalState.set("CREATED"); paypalCurrency.set("USD"); paypalAmount.set("10.00"); captureState.set("COMPLETED"); captures.set(0); }
+    @BeforeEach void reset() { state.set("Completed"); paid.set(new BigDecimal("100000")); starts.set(0); rejectStart.set(false); esewaStarts.set(0); paypalState.set("CREATED"); paypalCurrency.set("USD"); paypalAmount.set("10.00"); captureState.set("COMPLETED"); captures.set(0); }
     @Autowired MockMvc mvc;
     @Autowired PaymentGateway gateway;
     @Autowired Db db;
+    @Autowired CheckoutOrders checkoutOrders;
 
     JsonNode call(String method,String path,String token,Object body,int status) throws Exception {
-        var request=method.equals("POST")?post(path):get(path);
+        var request=switch(method) { case "POST" -> post(path); case "PUT" -> put(path); case "DELETE" -> delete(path); default -> get(path); };
         if(token!=null) request.header("Authorization","Bearer "+token);
         if(body!=null) request.contentType(MediaType.APPLICATION_JSON).content(JSON.writeValueAsBytes(body));
         return JSON.readTree(mvc.perform(request).andExpect(status().is(status)).andReturn().getResponse().getContentAsString());
@@ -125,7 +140,7 @@ class PaymentIntegrationTest {
         assertThat(quote.get("amount").decimalValue()).isEqualByComparingTo("1000");
         var payment=start(buyer,order,"khalti",200); String id=payment.get("id").asText();
         assertThat(initiate.get().get("amount").asLong()).isEqualTo(100000);
-        assertThat(initiate.get().get("return_url").asText()).endsWith("/checkout/"+course+"/payment/"+id);
+        assertThat(initiate.get().get("return_url").asText()).endsWith("/checkout/orders/"+order+"/payment/"+id);
         assertThat(start(buyer,order,"khalti",200).get("id").asText()).isEqualTo(id);
         assertThat(starts.get()).isEqualTo(1);
         start(buyer,order,"esewa",409);
@@ -144,11 +159,9 @@ class PaymentIntegrationTest {
     @Test void esewaSignsFormRejectsTamperedCallbackAndChecksStatus() throws Exception {
         String buyer=register("student"); long course=course(); String order=order(buyer,course);
         var payment=start(buyer,order,"esewa",200); String id=payment.get("id").asText();
-        assertThat(payment.get("redirect").get("url").asText()).isEqualTo("https://rc.esewa.com.np/api/epay/main/v2/form");
-        var oldRedirect=JSON.convertValue(payment.get("redirect"),new com.fasterxml.jackson.core.type.TypeReference<Map<String,Object>>(){});
-        oldRedirect.put("url","https://rc-epay.esewa.com.np/api/epay/main/v2/form");
-        db.update("UPDATE checkout_payment SET redirect_json=? WHERE id=?",JSON.writeValueAsString(oldRedirect),id);
-        assertThat(call("GET","/api/checkout/payments/"+id,buyer,null,200).get("redirect").get("url").asText()).isEqualTo("https://rc.esewa.com.np/api/epay/main/v2/form");
+        assertThat(payment.get("redirect").get("method").asText()).isEqualTo("GET");
+        assertThat(payment.get("redirect").get("url").asText()).isEqualTo("https://rc-epay.esewa.com.np/epay?bookingId="+id);
+        assertThat(call("GET","/api/checkout/payments/"+id,buyer,null,200).get("redirect")).isEqualTo(payment.get("redirect"));
         var fields=payment.get("redirect").get("fields");
         assertThat(fields.get("signature").asText()).isEqualTo(gateway.signature("total_amount=1000.00,transaction_uuid="+id+",product_code=TEST"));
         assertThat(payment.toString()).doesNotContain("test-secret");
@@ -177,6 +190,31 @@ class PaymentIntegrationTest {
         assertThat(call("GET","/api/me/enrollments",buyer,null,200)).isEmpty();
     }
 
+    @Test void esewaResumeReopensSavedSessionAndExpiredAttemptGetsANewUuid() throws Exception {
+        String buyer=register("student"),other=register("student"); String order=order(buyer,course());
+        var first=start(buyer,order,"esewa",200); String id=first.get("id").asText();
+        state.set("PENDING"); paid.set(new BigDecimal("1000"));
+        call("POST","/api/checkout/payments/"+id+"/resume",other,null,404);
+        var resumed=call("POST","/api/checkout/payments/"+id+"/resume",buyer,null,200);
+        assertThat(resumed.get("redirect")).isEqualTo(first.get("redirect"));
+        assertThat(esewaStarts.get()).isEqualTo(1);
+        var legacy=JSON.convertValue(first.get("redirect"),new com.fasterxml.jackson.core.type.TypeReference<Map<String,Object>>(){});
+        legacy.put("method","POST"); legacy.put("url","https://rc.esewa.com.np/api/epay/main/v2/form");
+        db.update("UPDATE checkout_payment SET redirect_json=? WHERE id=?",JSON.writeValueAsString(legacy),id);
+        call("POST","/api/checkout/payments/"+id+"/resume",buyer,null,409);
+        assertThat(esewaStarts.get()).isEqualTo(1);
+        state.set("NOT_FOUND");
+        assertThat(call("POST","/api/checkout/payments/"+id+"/resume",buyer,null,200).get("status").asText()).isEqualTo("failed");
+        var second=start(buyer,order,"esewa",200); String next=second.get("id").asText();
+        assertThat(next).isNotEqualTo(id);
+        assertThat(second.get("redirect").get("fields").get("transaction_uuid").asText()).isEqualTo(next);
+        assertThat(esewaStarts.get()).isEqualTo(2);
+        state.set("COMPLETE");
+        assertThat(call("POST","/api/checkout/payments/"+next+"/resume",buyer,null,200).get("status").asText()).isEqualTo("completed");
+        assertThat(esewaStarts.get()).isEqualTo(2);
+        assertThat(call("GET","/api/me/enrollments",buyer,null,200)).hasSize(1);
+    }
+
     @Test void uncertainInitiationCannotStartAnotherCharge() throws Exception {
         String buyer=register("student"); long course=course(); String order=order(buyer,course);
         rejectStart.set(true); start(buyer,order,"khalti",502);
@@ -185,6 +223,33 @@ class PaymentIntegrationTest {
         String attempt=call("GET","/api/checkout/courses/"+course,buyer,null,200).get("activeAttempt").asText();
         verify(buyer,attempt,Map.of(),409);
         assertThat(call("GET","/api/me/enrollments",buyer,null,200)).isEmpty();
+    }
+
+    @Test void onePaymentSettlesEveryCourseAndBlocksOverlappingCheckouts() throws Exception {
+        String buyer=register("student"); long first=course(),second=course(),free=course(),untouched=course();
+        db.update("UPDATE course SET price=0 WHERE id=?",free);
+        for(long id:List.of(first,second,free,untouched)) call("PUT","/api/me/cart/"+id,buyer,null,200);
+        var order=call("POST","/api/checkout/orders",buyer,Map.of("courseIds",List.of(first,second,free)),200);
+        String orderId=order.get("id").asText();
+        assertThat(order.get("amount").decimalValue()).isEqualByComparingTo("20");
+        call("POST","/api/checkout/orders/"+orderId+"/complete",buyer,null,409);
+        var payment=call("POST","/api/checkout/orders/"+orderId+"/payments",buyer,Map.of("provider","khalti","expectedAmount",2000,"expectedCurrency","NPR"),200);
+        String id=payment.get("id").asText();
+        assertThat(initiate.get().get("amount").asLong()).isEqualTo(200000);
+        assertThat(payment.get("courseIds")).hasSize(3);
+        assertThat(payment.get("orderId").asText()).isEqualTo(orderId);
+        call("POST","/api/checkout/orders",buyer,Map.of("courseId",first),409);
+        assertThat(call("GET","/api/checkout/pending",buyer,null,200)).hasSize(1);
+        assertThat(call("GET","/api/me/notifications",buyer,null,200).get("total").asInt()).isZero();
+        state.set("Pending"); paid.set(new BigDecimal("200000")); verify(buyer,id,Map.of(),200);
+        assertThat(call("GET","/api/me/enrollments",buyer,null,200)).isEmpty();
+        state.set("Completed"); paid.set(new BigDecimal("100000")); verify(buyer,id,Map.of(),502);
+        assertThat(call("GET","/api/me/enrollments",buyer,null,200)).isEmpty();
+        paid.set(new BigDecimal("200000")); verify(buyer,id,Map.of(),200); verify(buyer,id,Map.of(),200);
+        assertThat(call("GET","/api/me/enrollments",buyer,null,200)).hasSize(3);
+        assertThat(call("GET","/api/me/notifications",buyer,null,200).get("total").asInt()).isEqualTo(3);
+        var cart=call("GET","/api/me/cart",buyer,null,200); assertThat(cart).hasSize(1); assertThat(cart.get(0).get("id").asLong()).isEqualTo(untouched);
+        assertThat(call("GET","/api/checkout/pending",buyer,null,200)).isEmpty();
     }
 
     @Test void paypalChargesUsdCapturesOnlyApprovedOrdersAndRejectsUnsettledCaptures() throws Exception {
@@ -213,7 +278,7 @@ class PaymentIntegrationTest {
         assertThat(captures.get()).isEqualTo(1);
         assertThat(call("GET","/api/me/enrollments",buyer,null,200)).hasSize(1);
         var user=call("GET","/api/auth/me",other,null,200);
-        var noRate=new PaymentService(db,gateway,JSON,BigDecimal.ZERO);
+        var noRate=new PaymentService(db,gateway,JSON,checkoutOrders,BigDecimal.ZERO);
         var quote=noRate.quote(course,new AuthService.User(user.get("id").asText(),"Other","other@test.example","student"),new BigDecimal("10"));
         assertThat(quote.get("paymentAvailable")).isEqualTo(true);
     }

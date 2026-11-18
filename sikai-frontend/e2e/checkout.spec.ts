@@ -23,11 +23,12 @@ async function checkoutFixture(page: Page, free = false, enabled = true) {
         return;
       }
       expect(request).toEqual({ provider: 'esewa', expectedAmount: 1000, expectedCurrency: 'NPR' });
-      body = { id: 'attempt-1', status: 'pending', provider: 'esewa', redirect: { method: 'POST', url: 'https://rc.esewa.com.np/api/epay/main/v2/form', fields: { signature: 'server-signature', total_amount: '1000.00' } } };
+      body = { id: 'attempt-1', status: 'pending', provider: 'esewa', redirect: { method: 'GET', url: 'https://rc-epay.esewa.com.np/epay?bookingId=test-session', fields: {} } };
     } else if (path === '/api/checkout/payments/attempt-1/verify') {
       checks++; if (checks > 1) { verified = true; enrolled = true; }
       body = { id: 'attempt-1', courseId: 99, provider: 'esewa', status: verified ? 'completed' : 'pending' };
     } else if (path === '/api/me/enrollments') body = enrolled ? [course] : [];
+    else if (path === '/api/me/notifications') body = {items: [], unreadCount: 0, total: 0, hasMore: false};
     else if (path === '/api/me/progress') body = {};
     await route.fulfill({ json: body });
   });
@@ -44,19 +45,19 @@ test('free checkout confirms enrollment and opens learning', async ({ page }) =>
   await expect(page.getByRole('link', { name: /Start learning/ })).toHaveAttribute('href', '/learn/99');
 });
 
-test('paid checkout submits server-signed eSewa form and shows both wallets on mobile', async ({ page }) => {
+test('paid checkout opens saved eSewa session and shows both wallets on mobile', async ({ page }) => {
   await checkoutFixture(page);
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/checkout/99');
   await expect(page.getByRole('radio', { name: /eSewa/ })).toBeChecked();
   await expect(page.getByRole('radio', { name: /Khalti/ })).toBeEnabled();
   await page.getByRole('checkbox').check();
-  await page.route('https://rc.esewa.com.np/**', route => route.fulfill({ contentType: 'text/html', body: '<h1>Wallet checkout</h1>' }));
-  const request = page.waitForRequest('https://rc.esewa.com.np/**');
+  await page.route('https://rc-epay.esewa.com.np/**', route => route.fulfill({ contentType: 'text/html', body: '<h1>Wallet checkout</h1>' }));
+  const request = page.waitForRequest('https://rc-epay.esewa.com.np/**');
   await page.getByRole('button', { name: 'Pay with eSewa' }).click();
   const payment = await request;
-  expect(payment.method()).toBe('POST');
-  expect(new URLSearchParams(payment.postData()!).get('signature')).toBe('server-signature');
+  expect(payment.method()).toBe('GET');
+  expect(new URL(payment.url()).searchParams.get('bookingId')).toBe('test-session');
 });
 
 test('payment return stays pending until backend confirms settlement', async ({ page }) => {

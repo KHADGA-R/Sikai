@@ -1,0 +1,34 @@
+<section class="container checkout-page page-min">
+  <a class="back" routerLink="/cart">← Back to cart</a>
+  @if (loading()) {<div class="checkout-state" role="status">Preparing your checkout...</div>}
+  @else if (quote(); as q) {
+    @if (complete()) {
+      <div class="checkout-state success" role="status"><span class="success-mark" aria-hidden="true">✓</span><span class="eyebrow purple">YOUR NEXT CHAPTER</span><h1>Your courses are ready!</h1><p>{{q.items.length}} {{q.items.length === 1 ? 'course has' : 'courses have'}} been added to your learning library.</p><a class="button primary" routerLink="/my-learning">Go to my learning</a>
+        <div class="purchased-courses">@for (item of q.items; track item.courseId) {<a [routerLink]="['/learn',item.courseId]">Start {{item.title}} ↗</a>}</div>
+      </div>
+    } @else {
+      <header class="checkout-heading"><span class="eyebrow purple">LEARN MORE, TOGETHER</span><h1>One checkout. {{q.items.length}} {{q.items.length === 1 ? 'course' : 'new possibilities'}}.</h1><p>Review all your courses and complete your enrollment.</p></header>
+      <div class="checkout-grid"><div class="checkout-main">
+        <section class="checkout-panel"><h2><span class="step-number">1</span> Your account</h2><div class="account-row"><span class="account-avatar" aria-hidden="true">{{auth.user()?.name?.charAt(0)}}</span><div><strong>{{auth.user()?.name}}</strong><p>{{auth.user()?.email}}</p></div><span class="account-label">Signed in</span></div><p class="small-note">All courses will be added to this account.</p></section>
+        <section class="checkout-panel"><h2><span class="step-number">2</span> {{free() ? 'Complete enrollment' : 'Payment'}}</h2>
+          @if (free()) {<div class="payment-notice"><strong>All learning. No payment needed.</strong><p>Every course in this order is free.</p></div>}
+          @else {
+            <fieldset class="payment-options" [disabled]="busy() || !!attempt()"><legend>Choose one payment method for your order</legend>
+              @for (p of q.providers; track p.id) {<label [class.selected]="provider() === p.id" [class.unavailable]="!p.available"><input type="radio" name="payment-provider" [value]="p.id" [checked]="provider() === p.id" [disabled]="!p.available" (change)="provider.set(p.id); accepted.set(false)"><strong>{{p.label}}</strong><span>{{p.available ? 'Pay in ' + p.currency : p.id === 'paypal' ? 'Available soon' : 'Unavailable'}}</span></label>}
+            </fieldset>
+            @if (!q.paymentAvailable) {<p role="status">{{q.configurationMessage}}</p>}
+            <p class="small-note">Your total is fixed when payment starts. One payment covers every course in this order.</p>
+          }
+          @if (attempt()) {<div class="payment-notice" role="status"><strong>Payment in progress</strong><p>{{message() || 'Resume payment or check its status. Your course selection is saved.'}}</p><div class="payment-actions"><button class="button outline" [disabled]="busy()" (click)="verify()">Check payment status</button><button class="button outline" [disabled]="busy()" (click)="resume()">Continue payment</button></div></div>}
+          @else {<label class="confirm-label"><input type="checkbox" [checked]="accepted()" [disabled]="busy()" (change)="accepted.set($any($event.target).checked)"><span>I have reviewed all courses, the total, and the payment currency.</span></label>}
+          @if (message() && !attempt()) {<p role="status">{{message()}}</p>}
+        </section>
+      </div><aside class="checkout-panel order-summary"><h2>Order summary · {{q.items.length}} courses</h2>
+        <div class="order-items">@for (item of q.items; track item.courseId) {<div class="order-course"><div class="order-art teal"><app-course-artwork [courseId]="item.courseId" /></div><div><h3>{{item.title}}</h3><p>{{item.amount === 0 ? 'Free' : (item.amount | currency:'USD')}}</p></div></div>}</div>
+        <dl><div><dt>Catalog subtotal</dt><dd>{{q.originalAmount | currency:'USD'}}</dd></div><div class="order-total"><dt>Total</dt><dd>{{total() | currency:(currency() ?? 'USD'):'code'}}</dd></div></dl>
+        @if (error()) {<p class="error-note" role="alert">{{error()}}</p>}
+        <button class="button primary full-btn" [disabled]="busy() || !accepted() || !!attempt() || (!free() && !selected()?.available)" (click)="confirm()">{{busy() ? 'Processing...' : free() ? 'Complete free enrollment' : 'Pay with ' + (selected()?.label ?? 'your payment provider')}}</button><p class="summary-note">{{free() ? 'No payment required.' : 'All courses unlock after payment is confirmed.'}}</p><a class="browse-link" routerLink="/cart">Edit courses in your cart</a>
+      </aside></div>
+    }
+  } @else {<div class="checkout-state"><h1>Checkout unavailable</h1><p role="alert">{{error() || 'This checkout could not be found.'}}</p><a class="button primary" routerLink="/cart">Return to cart</a></div>}
+</section>

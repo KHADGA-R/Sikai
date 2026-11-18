@@ -12,9 +12,10 @@ import static org.springframework.http.HttpStatus.*;
 @RequestMapping("/api/me")
 public class LearningController {
     private final Db db; private final CatalogService catalog;
+    private final NotificationService notifications;
 
     /** Connect personal learning routes to authenticated course access and parameterized persistence. */
-    public LearningController(Db db,CatalogService catalog) { this.db=db; this.catalog=catalog; }
+    public LearningController(Db db,CatalogService catalog,NotificationService notifications) { this.db=db; this.catalog=catalog; this.notifications=notifications; }
 
     /** Return the principal's saved courses that are still published. */
     @GetMapping("/wishlist") public Object wishlist(@AuthenticationPrincipal AuthService.User user) { return db.list(CatalogService.SELECT+" JOIN wishlist w ON w.course_id=c.id WHERE w.user_id=? AND c.published=TRUE ORDER BY c.id",user.id()); }
@@ -41,7 +42,7 @@ public class LearningController {
         Db.require(Boolean.TRUE.equals(course.get("published")),CONFLICT,"Course is not published");
         boolean exists=db.exists("SELECT user_id FROM enrollment WHERE user_id=? AND course_id=?",user.id(),courseId);
         Db.require(exists || ((BigDecimal)course.get("price")).signum()==0,CONFLICT,"Paid enrollment requires a payment integration; no payment has been collected");
-        if(!exists) db.update("INSERT INTO enrollment(user_id,course_id) VALUES (?,?)",user.id(),courseId);
+        if(!exists) { db.update("INSERT INTO enrollment(user_id,course_id) VALUES (?,?)",user.id(),courseId); notifications.enrolled(courseId,user); }
         return Map.of("success",true);
     }
 
@@ -57,7 +58,10 @@ public class LearningController {
     public Object complete(@PathVariable long courseId,@PathVariable long lessonId,@AuthenticationPrincipal AuthService.User user) {
         catalog.accessContent(courseId,user); lockUser(user);
         Db.require(db.exists("SELECT l.id FROM lesson l JOIN topic t ON t.id=l.topic_id WHERE l.id=? AND t.course_id=?",lessonId,courseId),NOT_FOUND,"Lesson not found in course");
-        if(!db.exists("SELECT user_id FROM progress WHERE user_id=? AND lesson_id=?",user.id(),lessonId)) db.update("INSERT INTO progress(user_id,lesson_id) VALUES (?,?)",user.id(),lessonId);
+        if(!db.exists("SELECT user_id FROM progress WHERE user_id=? AND lesson_id=?",user.id(),lessonId)) {
+            db.update("INSERT INTO progress(user_id,lesson_id) VALUES (?,?)",user.id(),lessonId);
+            notifications.completed(courseId,user);
+        }
         return Map.of("success",true);
     }
 

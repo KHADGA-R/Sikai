@@ -41,16 +41,14 @@ public class PaymentGateway {
         this.frontend=frontend.replaceAll("/+$","");
     }
 
-    public String formUrl() { return esewaForm; }
-
     public boolean available(String provider) {
         return switch(provider) { case "esewa" -> !esewaCode.isBlank() && !esewaSecret.isBlank(); case "khalti" -> !khaltiKey.isBlank(); case "paypal" -> paypal.available(); default -> false; };
     }
 
-    public Start start(String provider,String id,long courseId,String title,BigDecimal amount) {
+    public Start start(String provider,String id,String orderId,String title,BigDecimal amount) {
         Db.require(available(provider),SERVICE_UNAVAILABLE,"The selected payment provider is not configured");
-        if(provider.equals("paypal")) return paypal.start(id,courseId,title,amount);
-        String callback=frontend+"/checkout/"+courseId+"/payment/"+id;
+        if(provider.equals("paypal")) return paypal.start(id,orderId,title,amount);
+        String callback=frontend+"/checkout/orders/"+orderId+"/payment/"+id;
         if(provider.equals("esewa")) {
             String total=amount.toPlainString();
             var fields=new LinkedHashMap<String,String>();
@@ -60,7 +58,7 @@ public class PaymentGateway {
             fields.put("success_url",callback); fields.put("failure_url",callback+"?cancelled=1");
             fields.put("signed_field_names","total_amount,transaction_uuid,product_code");
             fields.put("signature",signature("total_amount="+total+",transaction_uuid="+id+",product_code="+esewaCode));
-            return new Start(id,Map.of("method","POST","url",esewaForm,"fields",fields));
+            return new Start(id,Map.of("method","GET","url",openEsewa(fields),"fields",fields));
         }
         Db.require(amount.compareTo(new BigDecimal("10"))>=0,BAD_REQUEST,"Khalti requires at least NPR 10. Choose eSewa for this order");
         var response=post("epayment/initiate/",Map.of("return_url",callback,"website_url",frontend,
@@ -79,8 +77,8 @@ public class PaymentGateway {
             String query="product_code="+encode(esewaCode)+"&total_amount="+encode(amount.toPlainString())+"&transaction_uuid="+encode(id);
             var result=send(HttpRequest.newBuilder(URI.create(esewaStatus+"?"+query)).GET().build(),false);
             String state=required(result,"status");
-            if(!state.equals("COMPLETE")) return new Verification(state.equals("CANCELED")?"failed":"pending",null);
             Db.require(esewaCode.equals(result.path("product_code").asText()) && id.equals(result.path("transaction_uuid").asText()) && money(result,"total_amount").compareTo(amount)==0,BAD_GATEWAY,"eSewa payment details did not match the order");
+            if(!state.equals("COMPLETE")) return new Verification(Set.of("CANCELED","NOT_FOUND").contains(state)?"failed":"pending",null);
             return new Verification("completed",required(result,"ref_id"));
         }
         var result=post("epayment/lookup/",Map.of("pidx",reference));
@@ -89,6 +87,26 @@ public class PaymentGateway {
         if(!state.equals("Completed")) return new Verification(Set.of("Expired","User canceled").contains(state)?"failed":"pending",null);
         Db.require(!result.path("refunded").asBoolean(false) && money(result,"total_amount").compareTo(amount.movePointRight(2))==0,BAD_GATEWAY,"Khalti payment amount did not match the order");
         return new Verification("completed",required(result,"transaction_id"));
+    }
+
+    /** Initiate exactly once and save the provider session URL instead of reposting its UUID. */
+    private String openEsewa(Map<String,String> fields) {
+        var parts=new ArrayList<String>(); fields.forEach((key,value)->parts.add(encode(key)+"="+encode(value)));
+        try {
+            var response=client.send(HttpRequest.newBuilder(URI.create(esewaForm)).timeout(Duration.ofSeconds(20))
+                .header("Content-Type","application/x-www-form-urlencoded")
+                .POST(HttpRequest.BodyPublishers.ofString(String.join("&",parts))).build(),HttpResponse.BodyHandlers.ofString());
+            if(response.statusCode()==200 && response.body().contains("Duplicate transaction UUID"))
+                throw new ResponseStatusException(CONFLICT,"eSewa already has this transaction. Check payment status before starting another payment");
+            Db.require(Set.of(302,303).contains(response.statusCode()),BAD_GATEWAY,"eSewa could not open a checkout session. Check payment status before retrying");
+            String location=response.headers().firstValue("location").orElse("");
+            Db.require(!location.isBlank(),BAD_GATEWAY,"eSewa did not return a checkout URL");
+            URI url=URI.create(esewaForm).resolve(location);
+            Db.require("https".equals(url.getScheme()) && Set.of("rc-epay.esewa.com.np","epay.esewa.com.np").contains(url.getHost()) && "/epay".equals(url.getPath()),BAD_GATEWAY,"Invalid eSewa checkout destination");
+            return url.toString();
+        } catch(ResponseStatusException e) { throw e; }
+        catch(InterruptedException e) { Thread.currentThread().interrupt(); throw new ResponseStatusException(BAD_GATEWAY,"eSewa request interrupted. Check payment status"); }
+        catch(Exception e) { throw new ResponseStatusException(BAD_GATEWAY,"Unable to open eSewa checkout. Check payment status before retrying"); }
     }
 
     private void verifyEsewaData(String data,String id,BigDecimal amount) {

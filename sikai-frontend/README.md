@@ -14,6 +14,10 @@ Angular 20 learning application connected to the separate Spring Boot API in `..
 
 ## Quick start
 
+Signed-in students and instructors have a **notification bell** in the top bar. Open it to see recent enrollment, course-update, completion and live-class activity; select an item to mark it read and open its page. **Mark all as read** and **Show more notifications** manage saved history. The badge refreshes on focus/open and every 30 seconds while visible. Inbox data is cleared when accounts change. Notification browser coverage: `npx playwright test e2e/notifications.spec.ts`.
+
+Students can add courses from catalog cards or course details, open **Cart** in the navigation, and check out all selected courses together. The cart persists on the backend per account. `/checkout/orders/:orderId` reviews one order with all course items; confirmed payment unlocks every item and removes only the purchased courses from the cart. All-free orders require no payment. PayPal remains an unavailable placeholder by default. Cart browser coverage: `npx playwright test e2e/cart.spec.ts`.
+
 Course enrollment uses `/checkout/:id`. Free enrollment completes through persisted backend orders; paid checkout offers eSewa, Khalti and PayPal when configured. Catalog prices remain USD; eSewa/Khalti checkout displays the server-quoted NPR amount, while PayPal charges USD. Selecting a payment method updates the total and requires confirmation again. Payment returns and pending-payment recovery verify with the backend before showing course access. Configure [Nepali wallets](../sikai-backend/README.md#configure-esewa-and-khalti) or [PayPal sandbox](../sikai-backend/README.md#configure-paypal-sandbox) on the backend. No merchant secrets belong in frontend configuration.
 
 Checkout UI checks: `npx playwright test e2e/checkout.spec.ts`. These use mocked API responses; backend payment integration tests exercise local fake provider servers. A real sandbox payment requires merchant credentials.

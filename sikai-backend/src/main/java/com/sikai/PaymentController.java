@@ -36,9 +36,22 @@ public class PaymentController {
     @GetMapping("/payments/{id}")
     public Map<String,Object> payment(@PathVariable String id,@AuthenticationPrincipal AuthService.User user) { return payments.response(payments.owned(id,user)); }
 
+    /** Check settlement before reopening an existing provider session; never repost an eSewa UUID. */
+    @PostMapping("/payments/{id}/resume")
+    public Object resume(@PathVariable String id,@AuthenticationPrincipal AuthService.User user) {
+        var payment=payments.owned(id,user);
+        if("paypal".equals(payment.get("provider")) && "creating".equals(payment.get("status"))) { initialize(id,user); payment=payments.owned(id,user); }
+        var result=payments.settle(id,payments.verify(payment,null),user);
+        if("pending".equals(result.get("status")) && "esewa".equals(result.get("provider"))) {
+            var redirect=result.get("redirect");
+            Db.require(redirect instanceof Map<?,?> && "GET".equals(((Map<?,?>)redirect).get("method")),org.springframework.http.HttpStatus.CONFLICT,"This older eSewa checkout cannot be reopened safely. Use the original eSewa tab or check status after it expires");
+        }
+        return result;
+    }
+
     private void initialize(String id,AuthService.User user) {
         var payment=payments.owned(id,user);
-        var redirect=gateway.start(payment.get("provider").toString(),id,((Number)payment.get("course_id")).longValue(),payment.get("course_title").toString(),(BigDecimal)payment.get("amount"));
+        var redirect=gateway.start(payment.get("provider").toString(),id,payment.get("order_id").toString(),payment.get("course_title").toString(),(BigDecimal)payment.get("amount"));
         payments.initialized(id,redirect,user);
     }
 }

@@ -9,7 +9,7 @@ for (const width of [1440, 900, 390]) {
       const path = new URL(route.request().url()).pathname;
       const body = path === '/api/auth/me'
         ? { id: 'layout-student', name: 'Layout Student', email: 'layout@example.com', role: 'student' }
-        : path === '/api/me/progress' ? {} : [];
+        : path === '/api/me/notifications' ? {items: [], unreadCount: 0, total: 0, hasMore: false} : path === '/api/me/progress' ? {} : [];
       await route.fulfill({ json: body });
     });
 

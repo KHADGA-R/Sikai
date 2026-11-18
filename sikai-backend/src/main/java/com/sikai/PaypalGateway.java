@@ -33,8 +33,8 @@ public class PaypalGateway {
     }
     public boolean available() { return enabled && !clientId.isBlank() && !secret.isBlank(); }
 
-    public PaymentGateway.Start start(String id,long courseId,String title,BigDecimal amount) {
-        String callback=frontend+"/checkout/"+courseId+"/payment/"+id;
+    public PaymentGateway.Start start(String id,String orderId,String title,BigDecimal amount) {
+        String callback=frontend+"/checkout/orders/"+orderId+"/payment/"+id;
         var payload=Map.of("intent","CAPTURE",
             "purchase_units",List.of(Map.of("reference_id",id,"custom_id",id,"description",title.substring(0,Math.min(127,title.length())),
                 "amount",Map.of("currency_code","USD","value",amount.setScale(2).toPlainString()))),

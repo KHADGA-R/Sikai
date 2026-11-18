@@ -17,14 +17,25 @@ public class PaymentService {
     private final PaymentGateway gateway;
     private final ObjectMapper mapper;
     private final BigDecimal rate;
+    private final CheckoutOrders orders;
 
-    public PaymentService(Db db,PaymentGateway gateway,ObjectMapper mapper,@Value("${sikai.payments.usd-npr-rate:0}") BigDecimal rate) {
-        this.db=db; this.gateway=gateway; this.mapper=mapper; this.rate=rate;
+    public PaymentService(Db db,PaymentGateway gateway,ObjectMapper mapper,CheckoutOrders orders,@Value("${sikai.payments.usd-npr-rate:0}") BigDecimal rate) {
+        this.db=db; this.gateway=gateway; this.mapper=mapper; this.orders=orders; this.rate=rate;
         if(rate.signum()<0) throw new IllegalArgumentException("USD_NPR_RATE must be positive or zero to disable paid checkout");
     }
 
     public Map<String,Object> quote(long courseId,AuthService.User user,BigDecimal usd) {
-        var active=db.list("SELECT p.*,o.amount AS original_amount FROM checkout_payment p JOIN checkout_order o ON o.id=p.order_id WHERE o.user_id=? AND o.course_id=? AND p.status IN ('creating','pending') ORDER BY p.created_at DESC",user.id(),courseId);
+        var active=db.list("SELECT p.*,o.amount AS original_amount FROM checkout_payment p JOIN checkout_order o ON o.id=p.order_id WHERE o.user_id=? AND o.basket_key=? AND p.status IN ('creating','pending') ORDER BY p.created_at DESC",user.id(),"courses:"+courseId);
+        return quoteData(courseId,user,usd,active);
+    }
+    public Map<String,Object> quoteOrder(String orderId,AuthService.User user) {
+        var order=orders.owned(orderId,user);
+        var active=db.list("SELECT p.*,o.amount AS original_amount FROM checkout_payment p JOIN checkout_order o ON o.id=p.order_id WHERE o.user_id=? AND o.id=? AND p.status IN ('creating','pending') ORDER BY p.created_at DESC",user.id(),orderId);
+        var result=quoteData(((Number)order.get("courseId")).longValue(),user,(BigDecimal)order.get("amount"),active);
+        result.put("orderId",orderId); result.put("items",order.get("items")); result.put("status",order.get("status"));
+        return result;
+    }
+    private Map<String,Object> quoteData(long courseId,AuthService.User user,BigDecimal usd,List<Map<String,Object>> active) {
         BigDecimal amount=usd.signum()==0?BigDecimal.ZERO:rate.signum()>0?convert(usd):usd;
         var result=new LinkedHashMap<String,Object>();
         result.put("courseId",courseId); result.put("amount",active.isEmpty()?amount:active.get(0).get("amount"));
@@ -64,9 +75,7 @@ public class PaymentService {
             return new Reservation(payment,false);
         }
         Db.require((provider.equals("paypal") || rate.signum()>0) && gateway.available(provider),SERVICE_UNAVAILABLE,"This payment provider or its currency pricing is not configured");
-        var course=db.one("SELECT price,published FROM course WHERE id=? FOR UPDATE",order.get("course_id"));
-        Db.require(Boolean.TRUE.equals(course.get("published")),CONFLICT,"Course is not published");
-        Db.require(((BigDecimal)course.get("price")).compareTo((BigDecimal)order.get("amount"))==0,CONFLICT,"Course price changed. Please review checkout again");
+        orders.validate(orderId,user);
         String currency=provider.equals("paypal")?"USD":"NPR";
         Db.require(currency.equals(expectedCurrency),CONFLICT,"Incorrect payment currency. Refresh checkout to review the total");
         BigDecimal amount=provider.equals("paypal")?(BigDecimal)order.get("amount"):convert((BigDecimal)order.get("amount"));
@@ -93,12 +102,14 @@ public class PaymentService {
         var result=new LinkedHashMap<String,Object>();
         for(String key:List.of("id","provider","amount","currency","status")) result.put(key,payment.get(key));
         result.put("courseId",payment.get("course_id"));
+        result.put("orderId",payment.get("order_id"));
+        result.put("courseIds",orders.items(payment.get("order_id").toString()).stream().map(i->i.get("courseId")).toList());
         if(payment.get("redirect_json")!=null) {
             try {
                 var redirect=mapper.readValue(payment.get("redirect_json").toString(),new TypeReference<Map<String,Object>>(){});
-                // Recover existing attempts when the provider changes its form entry point.
-                if("esewa".equals(payment.get("provider"))) redirect.put("url",gateway.formUrl());
-                result.put("redirect",redirect);
+                // Legacy forms have already consumed their UUID. Never send them for resubmission.
+                if("esewa".equals(payment.get("provider")) && "POST".equals(redirect.get("method"))) result.put("legacySession",true);
+                else result.put("redirect",redirect);
             }
             catch(Exception e) { throw new IllegalStateException("Invalid persisted payment redirect",e); }
         }
@@ -118,10 +129,8 @@ public class PaymentService {
         if("completed".equals(payment.get("status"))) return response(payment);
         if("failed".equals(payment.get("status")) && !"completed".equals(verified.status())) return response(payment);
         if("completed".equals(verified.status())) {
-            long course=((Number)payment.get("course_id")).longValue();
-            if(!db.exists("SELECT user_id FROM enrollment WHERE user_id=? AND course_id=?",user.id(),course)) db.update("INSERT INTO enrollment(user_id,course_id) VALUES (?,?)",user.id(),course);
+            orders.fulfill(payment.get("order_id").toString(),user);
             db.update("UPDATE checkout_payment SET status='completed',transaction_id=? WHERE id=?",verified.transactionId(),id);
-            db.update("UPDATE checkout_order SET status='completed',completed_at=? WHERE id=?",System.currentTimeMillis(),payment.get("order_id"));
         } else db.update("UPDATE checkout_payment SET status=? WHERE id=?",verified.status(),id);
         return response(owned(id,user));
     }

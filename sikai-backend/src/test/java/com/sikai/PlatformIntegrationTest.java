@@ -57,6 +57,49 @@ class PlatformIntegrationTest {
         request("POST","/api/checkout/orders",buyer,Map.of("courseId",hidden),404);
     }
 
+    @Test void cartCheckoutIsAccountScopedDeduplicatedAndCompletesAllFreeCourses() throws Exception {
+        String teacher=register("instructor"),student=register("student"),other=register("student");
+        long first=request("POST","/api/instructor/courses",teacher,course(true),201).get("id").asLong();
+        long second=request("POST","/api/instructor/courses",teacher,course(true),201).get("id").asLong();
+        request("PUT","/api/me/cart/"+first,null,null,401);
+        request("PUT","/api/me/cart/"+first,student,null,200);
+        request("PUT","/api/me/cart/"+first,student,null,200);
+        request("PUT","/api/me/cart/"+second,student,null,200);
+        assertThat(request("GET","/api/me/cart",student,null,200)).hasSize(2);
+        assertThat(request("GET","/api/me/cart",other,null,200)).isEmpty();
+        request("DELETE","/api/me/cart/"+first,other,null,200);
+        assertThat(request("GET","/api/me/cart",student,null,200)).hasSize(2);
+        request("POST","/api/checkout/orders",student,Map.of("courseIds",List.of()),400);
+        request("POST","/api/checkout/orders",student,Map.of("courseId",first,"courseIds",List.of(second)),400);
+        var order=request("POST","/api/checkout/orders",student,Map.of("courseIds",List.of(second,first,first),"amount",-10),200);
+        String id=order.get("id").asText();
+        assertThat(order.get("items")).hasSize(2);
+        assertThat(request("POST","/api/checkout/orders",student,Map.of("courseIds",List.of(first,second)),200).get("id").asText()).isEqualTo(id);
+        request("GET","/api/checkout/orders/"+id+"/quote",other,null,404);
+        request("POST","/api/checkout/orders/"+id+"/complete",other,null,404);
+        assertThat(request("POST","/api/checkout/orders/"+id+"/complete",student,null,200).get("status").asText()).isEqualTo("completed");
+        request("POST","/api/checkout/orders/"+id+"/complete",student,null,200);
+        assertThat(request("GET","/api/me/enrollments",student,null,200)).hasSize(2);
+        assertThat(request("GET","/api/me/cart",student,null,200)).isEmpty();
+        request("PUT","/api/me/cart/"+first,student,null,409);
+    }
+
+    @Test void cartRejectsPriceChangesAndUnavailableItemsWithoutPartialEnrollment() throws Exception {
+        String teacher=register("instructor"),student=register("student");
+        long first=request("POST","/api/instructor/courses",teacher,course(true),201).get("id").asLong();
+        long second=request("POST","/api/instructor/courses",teacher,course(true),201).get("id").asLong();
+        String id=request("POST","/api/checkout/orders",student,Map.of("courseIds",List.of(first,second)),200).get("id").asText();
+        request("PUT","/api/instructor/courses/"+second,teacher,course(false),200);
+        request("POST","/api/checkout/orders/"+id+"/complete",student,null,409);
+        assertThat(request("GET","/api/me/enrollments",student,null,200)).isEmpty();
+        var refreshed=request("POST","/api/checkout/orders",student,Map.of("courseIds",List.of(first,second)),200);
+        assertThat(refreshed.get("amount").decimalValue()).isEqualByComparingTo("10");
+        var draft=new HashMap<>(course(false)); draft.put("published",false);
+        request("PUT","/api/instructor/courses/"+second,teacher,draft,200);
+        request("POST","/api/checkout/orders/"+id+"/complete",student,null,409);
+        assertThat(request("GET","/api/me/enrollments",student,null,200)).isEmpty();
+    }
+
     @Test void authenticationAndRoles() throws Exception {
         request("GET","/actuator/health",null,null,200);
         request("GET","/api/courses/not-a-number",null,null,400);

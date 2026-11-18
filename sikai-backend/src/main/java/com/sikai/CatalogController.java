@@ -39,7 +39,7 @@ public class CatalogController {
     public Object delete(@PathVariable long id,@AuthenticationPrincipal AuthService.User user) {
         catalog.owner(id,user);
         db.one("SELECT id FROM course WHERE id=? FOR UPDATE",id);
-        Db.require(!db.exists("SELECT id FROM checkout_payment WHERE course_id=?",id),org.springframework.http.HttpStatus.CONFLICT,"Courses with payment records cannot be deleted. Unpublish the course instead");
+        Db.require(!db.exists("SELECT p.id FROM checkout_payment p JOIN checkout_order_item i ON i.order_id=p.order_id WHERE i.course_id=?",id),org.springframework.http.HttpStatus.CONFLICT,"Courses with payment records cannot be deleted. Unpublish the course instead");
         db.update("DELETE FROM course WHERE id=?",id); return Map.of("success",true);
     }
 

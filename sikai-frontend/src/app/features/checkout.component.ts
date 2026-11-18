@@ -1,3 +1,4 @@
+import { redirectToPayment } from '../core/payment-redirect';
 import { Component, computed, effect, inject, signal } from '@angular/core';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { toSignal } from '@angular/core/rxjs-interop';
@@ -121,24 +122,20 @@ export class CheckoutComponent {
   async resumePayment(): Promise<void> {
     const attempt = this.attempt(); if (!attempt || this.busy()) return;
     this.busy.set(true); this.error.set('');
-    try { this.redirect(await this.api.request<Payment>('GET', `/checkout/payments/${encodeURIComponent(attempt)}`)); }
+    try {
+      const payment = await this.api.request<Payment>('POST', `/checkout/payments/${encodeURIComponent(attempt)}/resume`);
+      if (payment.courseId !== this.id()) throw new Error('This payment belongs to another course.');
+      if (payment.status === 'completed') {
+        await this.store.refreshPersonal(); this.confirmed.set(true);
+      } else if (payment.status === 'failed') {
+        this.attempt.set(null); this.accepted.set(false);
+        this.quote.set(await this.api.request<CheckoutQuote>('GET', `/checkout/courses/${this.id()}`));
+        this.paymentMessage.set('The previous payment session expired or was cancelled. Review your total to start a fresh payment.');
+      } else this.redirect(payment);
+    }
     catch (e) { this.error.set(e instanceof Error ? e.message : 'Unable to resume payment.'); }
     finally { this.busy.set(false); }
   }
 
-  private redirect(payment: Payment): void {
-    const redirect = payment.redirect;
-    if (!redirect || payment.status !== 'pending') throw new Error('Payment is not ready. Check payment status before trying again.');
-    const url = new URL(redirect.url);
-    const hosts = ['rc.esewa.com.np', 'rc-epay.esewa.com.np', 'epay.esewa.com.np', 'pay.khalti.com', 'test-pay.khalti.com', 'www.sandbox.paypal.com', 'www.paypal.com'];
-    if (url.protocol !== 'https:' || !hosts.includes(url.hostname)) throw new Error('Invalid payment destination.');
-    if (redirect.method === 'GET') { window.location.assign(redirect.url); return; }
-    const form = document.createElement('form');
-    form.method = 'POST'; form.action = redirect.url; form.hidden = true;
-    for (const [name, value] of Object.entries(redirect.fields)) {
-      const input = document.createElement('input'); input.type = 'hidden'; input.name = name; input.value = value; form.appendChild(input);
-    }
-    // Keep the submitted form connected until the browser leaves the checkout page.
-    document.body.appendChild(form); form.submit();
-  }
+  private redirect(payment: Payment): void { redirectToPayment(payment); }
 }
