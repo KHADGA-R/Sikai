@@ -7,9 +7,10 @@ export interface ApiCourse extends Course { ownerId: string; }
 export interface ApiLesson {
   id: number; title: string; minutes: number; kind: 'video' | 'audio' | 'pdf';
   duration: number; chapters: Chapter[]; fileName?: string; hasFile: boolean; position: number;
+  description?: string; freePreview?: boolean; slidesName?: string;
 }
 /** Ordered topic containing the backend's real numeric lesson IDs. */
-export interface ApiTopic { id: string; title: string; position: number; lessons: ApiLesson[]; }
+export interface ApiTopic { id: string; title: string; position: number; objective?: string; lessons: ApiLesson[]; }
 
 /** SQL nullable fields map to the optional properties used by Angular form controls. */
 export function normalizeCourse<T extends Course>(course: T): T {
@@ -18,6 +19,6 @@ export function normalizeCourse<T extends Course>(course: T): T {
 
 /** Only editable fields are sent; server assigns ownership, IDs, rating and lesson counts. */
 export function courseInput(course: Course): object {
-  const { title, description, category, subcategory, price, level, durationHours, emoji, accent, published, grade } = course;
-  return { title, description, category, subcategory, price, level, durationHours, emoji, accent, published, grade };
+  const { title, description, category, subcategory, price, level, durationHours, emoji, accent, published, grade, summary, audience, prerequisites, outcomes, language } = course;
+  return { title, description, category, subcategory, price, level, durationHours, emoji, accent, published, grade, summary, audience, prerequisites, outcomes, language };
 }

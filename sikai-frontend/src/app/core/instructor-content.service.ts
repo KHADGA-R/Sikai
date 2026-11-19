@@ -4,70 +4,124 @@ import { ApiCourse, ApiTopic, normalizeCourse } from './api-models';
 import { InstructorCourse, InstructorLesson, validateInstructorCourse } from './instructor-content';
 import { LearnHubStore } from './store.service';
 
-/** Adapts the existing nested editor to course/topic/lesson APIs; media is loaded on demand. */
+interface Workspace {
+  revision: number;
+  course: InstructorCourse;
+}
+
 @Injectable({ providedIn: 'root' })
 export class InstructorContentService {
   private readonly api = inject(ApiService);
   private readonly store = inject(LearnHubStore);
 
-  /** Load the instructor course hierarchy as metadata; lesson binaries are fetched only when previewed. */
   async list(): Promise<InstructorCourse[]> {
-    const courses = await this.api.request<ApiCourse[]>('GET', '/instructor/courses');
-    return Promise.all(courses.map(async course => ({
-      ...normalizeCourse(course), id: String(course.id), updatedAt: 0,
-      topics: (await this.api.request<ApiTopic[]>('GET', `/courses/${course.id}/content`)).map(topic => ({
-        id: topic.id, title: topic.title, lessons: topic.lessons.map(lesson => ({
-          ...lesson, id: String(lesson.id), fileName: lesson.fileName ?? '', file: undefined
+    const [courses, workspaces] = await Promise.all([
+      this.api.request<ApiCourse[]>('GET', '/instructor/courses'),
+      this.api.request<Workspace[]>('GET', '/instructor/workspaces')
+    ]);
+    const drafts = new Map(workspaces.map(({ course, revision }) => [course.id, { ...course, revision }]));
+    const saved = await Promise.all(courses.map(async course => {
+      const id = String(course.id);
+      const draft = drafts.get(id);
+      if (draft) {
+        drafts.delete(id);
+        return { ...draft, published: course.published };
+      }
+      const topics = await this.api.request<ApiTopic[]>('GET', `/courses/${id}/content`);
+      return {
+        ...normalizeCourse(course), id, updatedAt: 0,
+        topics: topics.map(topic => ({
+          ...topic, lessons: topic.lessons.map(lesson => ({
+            ...lesson, id: String(lesson.id), fileName: lesson.fileName ?? ''
+          }))
         }))
-      }))
-    })));
+      };
+    }));
+    return [...drafts.values(), ...saved];
   }
 
-  /** Use a newly selected local file when available, otherwise fetch the saved lesson through authenticated download. */
   async preview(lesson: InstructorLesson): Promise<Blob> {
-    return lesson.file ?? await this.api.file(lesson.id);
+    if (lesson.file) return lesson.file;
+    if (lesson.assetId) return this.api.blob(`/instructor/workspaces/assets/${lesson.assetId}`);
+    return this.api.file(lesson.id);
   }
 
-  /**
-   * Synchronize a nested draft through separate course, topic, lesson and upload requests, then publish last.
-   * Server IDs are copied back immediately so a partial save can be retried without duplicating created
-   * records.
-   */
-  async save(course: InstructorCourse): Promise<void> {
+  cover(course: InstructorCourse): Promise<Blob> {
+    if (course.coverFile) return Promise.resolve(course.coverFile);
+    return this.api.blob(`/instructor/workspaces/assets/${course.coverAssetId}`);
+  }
+
+  slides(lesson: InstructorLesson): Promise<Blob> {
+    if (lesson.slides) return Promise.resolve(lesson.slides);
+    if (lesson.slidesAssetId) return this.api.blob(`/instructor/workspaces/assets/${lesson.slidesAssetId}`);
+    return this.api.file(lesson.id, 'slides');
+  }
+
+  async duplicate(lesson: InstructorLesson): Promise<InstructorLesson> {
+    const copy: InstructorLesson = { ...structuredClone(lesson), id: crypto.randomUUID(), title: (lesson.title + ' (copy)').slice(0, 160), hasFile: false };
+    if (!copy.assetId && !copy.file) {
+      copy.file = await this.preview(lesson);
+    }
+    if (copy.slidesName && !copy.slidesAssetId && !copy.slides && !copy.removeSlides) {
+      const slides = await this.api.file(lesson.id, 'slides');
+      copy.slides = new File([slides], copy.slidesName, { type: 'application/pdf' });
+    }
+    return copy;
+  }
+
+  async save(course: InstructorCourse, report: (status: string) => void): Promise<void> {
+    if (course.coverFile) {
+      const asset = await this.stage(course.coverFile, course.coverFile.name, report);
+      course.coverAssetId = asset.id;
+      course.coverFile = undefined;
+    }
+    for (const topic of course.topics) for (const lesson of topic.lessons) {
+      if (lesson.file) {
+        const asset = await this.stage(lesson.file, lesson.fileName, report);
+        lesson.assetId = asset.id;
+        lesson.fileName = asset.fileName;
+        lesson.file = undefined;
+      }
+      if (lesson.slides) {
+        const asset = await this.stage(lesson.slides, lesson.slides.name, report);
+        lesson.slidesAssetId = asset.id;
+        lesson.slidesName = asset.fileName;
+        lesson.slides = undefined;
+      }
+    }
+    const result = await this.api.request<Workspace>('PUT', `/instructor/workspaces/${course.id}`, {
+      revision: course.revision ?? course.baseRevision ?? 0, course
+    });
+    course.revision = result.revision;
+  }
+
+  async publish(course: InstructorCourse, report: (status: string) => void): Promise<string> {
     validateInstructorCourse(course);
     if (course.title.trim().length < 4) throw new Error('Course title must contain at least four characters.');
-    const published = course.published ?? false;
-    const input = {
-      title: course.title, description: course.description, category: course.category ?? 'Skills & Training',
-      subcategory: course.subcategory, price: course.price ?? 0, level: course.level ?? 'BEGINNER',
-      durationHours: course.durationHours ?? course.topics.flatMap(t => t.lessons).reduce((n, l) => n + l.duration, 0) / 3600,
-      emoji: course.emoji ?? '📚', accent: course.accent ?? 'teal', published: false, grade: course.grade
-    };
-    // Save as a draft while its hierarchy/uploads are synchronized. IDs are assigned back immediately,
-    // so retrying a partially completed save updates existing records instead of duplicating them.
-    if (!/^\d+$/.test(course.id)) {
-      const created = await this.api.request<ApiCourse>('POST', '/instructor/courses', input);
-      course.id = String(created.id);
-    } else await this.api.request('PUT', `/instructor/courses/${course.id}`, input);
-    const previous = await this.api.request<ApiTopic[]>('GET', `/courses/${course.id}/content`);
-    for (const [position, topic] of course.topics.entries()) {
-      const existing = previous.find(t => t.id === topic.id);
-      if (!existing) topic.id = (await this.api.request<{ id: string }>('POST', `/instructor/courses/${course.id}/topics`, { title: topic.title, position })).id;
-      else await this.api.request('PUT', `/instructor/topics/${topic.id}`, { title: topic.title, position });
-      for (const [lessonPosition, lesson] of topic.lessons.entries()) {
-        const metadata = { title: lesson.title, minutes: Math.ceil(lesson.duration / 60), kind: lesson.kind, duration: lesson.duration, chapters: lesson.chapters, position: lessonPosition };
-        if (!/^\d+$/.test(lesson.id)) lesson.id = String((await this.api.request<{ id: number }>('POST', `/instructor/topics/${topic.id}/lessons`, metadata)).id);
-        else await this.api.request('PUT', `/instructor/lessons/${lesson.id}`, metadata);
-        if (lesson.file) {
-          const form = new FormData(); form.append('file', lesson.file, lesson.fileName);
-          await this.api.request('POST', `/instructor/lessons/${lesson.id}/file`, form);
-          lesson.hasFile = true; lesson.file = undefined;
-        }
-      }
-      for (const old of existing?.lessons ?? []) if (!topic.lessons.some(l => l.id === String(old.id))) await this.api.request('DELETE', `/instructor/lessons/${old.id}`);
+    if (!course.topics.some(topic => topic.lessons.length)) throw new Error('Add at least one lesson before publishing.');
+    course.durationHours = course.topics.flatMap(topic => topic.lessons).reduce((total, lesson) => total + lesson.duration, 0) / 3600;
+    course.emoji ??= '📚';
+    course.accent ??= 'teal';
+    course.price ??= 0;
+    course.level ??= 'BEGINNER';
+    await this.save(course, report);
+    report('Publishing course…');
+    const published = await this.api.request<{ id: number }>('POST', `/instructor/workspaces/${course.id}/publish`, { revision: course.revision });
+    void this.store.refreshCatalog().catch(() => undefined);
+    return String(published.id);
+  }
+
+  private async stage(file: Blob, name: string, report: (status: string) => void): Promise<{ id: string; fileName: string }> {
+    report(`Uploading ${name}…`);
+    const form = new FormData();
+    form.append('file', file, name);
+    try {
+      return await this.api.upload('/instructor/workspaces/assets', form, percent => {
+        report(percent === 100 ? `Saving ${name}…` : `Uploading ${name} (${percent}%)…`);
+      });
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : 'Upload failed.';
+      throw new Error(`${name}: ${reason}`);
     }
-    for (const old of previous) if (!course.topics.some(t => t.id === old.id)) await this.api.request('DELETE', `/instructor/topics/${old.id}`);
-    await this.api.request('PUT', `/instructor/courses/${course.id}`, { ...input, published });
-    await this.store.refreshCatalog();
   }
 }

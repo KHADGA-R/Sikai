@@ -19,8 +19,10 @@ public class CatalogService {
     public record CourseInput(@NotBlank @Size(min=4,max=160) String title,@NotBlank @Size(max=20000) String description,
         @NotBlank String category,String subcategory,@NotNull @DecimalMin("0.00") @DecimalMax("9999999999.99") @Digits(integer=10,fraction=2) BigDecimal price,
         @NotNull @Pattern(regexp="BEGINNER|INTERMEDIATE|ADVANCED") String level,@PositiveOrZero double durationHours,
-        @NotBlank @Size(max=40) String emoji,@NotNull @Pattern(regexp="violet|teal|pink|blue|green|orange") String accent,boolean published,@Min(1) @Max(12) Integer grade) {}
-    public static final String SELECT="SELECT c.id,c.title,c.description,u.name AS instructor,c.category,c.subcategory,c.price,(c.price=0) AS \"isFree\",c.level,c.rating,c.duration_hours AS \"durationHours\",(SELECT COUNT(*) FROM lesson l JOIN topic t ON t.id=l.topic_id WHERE t.course_id=c.id) AS lessons,c.emoji,c.accent,c.published,c.grade,c.owner_id AS \"ownerId\" FROM course c JOIN app_user u ON u.id=c.owner_id";
+        @NotBlank @Size(max=40) String emoji,@NotNull @Pattern(regexp="violet|teal|pink|blue|green|orange") String accent,boolean published,@Min(1) @Max(12) Integer grade,
+        @Size(max=240) String summary,@Size(max=4000) String audience,@Size(max=4000) String prerequisites,
+        @Size(max=4000) String outcomes,@Size(max=80) String language) {}
+    public static final String SELECT="SELECT c.id,c.title,c.description,c.summary,c.audience,c.prerequisites,c.outcomes,c.language,c.cover_key AS \"coverAssetId\",u.name AS instructor,c.category,c.subcategory,c.price,(c.price=0) AS \"isFree\",c.level,c.rating,c.duration_hours AS \"durationHours\",(SELECT COUNT(*) FROM lesson l JOIN topic t ON t.id=l.topic_id WHERE t.course_id=c.id) AS lessons,c.emoji,c.accent,c.published,c.grade,c.owner_id AS \"ownerId\" FROM course c JOIN app_user u ON u.id=c.owner_id";
     final Db db; private final ObjectMapper mapper;
     private final NotificationService notifications;
 
@@ -73,7 +75,9 @@ public class CatalogService {
     /** Validate catalog data and insert a course whose owner is derived from the authenticated user. */
     @Transactional public long create(CourseInput c,AuthService.User user) {
         instructor(user); validate(c);
-        return db.insert("INSERT INTO course(owner_id,title,description,category,subcategory,price,level,duration_hours,emoji,accent,published,grade) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",user.id(),c.title.trim(),c.description.trim(),c.category,c.subcategory,c.price,c.level,c.durationHours,c.emoji,c.accent,c.published,c.grade);
+        long id=db.insert("INSERT INTO course(owner_id,title,description,category,subcategory,price,level,duration_hours,emoji,accent,published,grade) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",user.id(),c.title.trim(),c.description.trim(),c.category,c.subcategory,c.price,c.level,c.durationHours,c.emoji,c.accent,c.published,c.grade);
+        updateDetails(id,c);
+        return id;
     }
 
     /** Validate ownership and replace editable catalog fields within a database transaction. */
@@ -81,8 +85,14 @@ public class CatalogService {
         owner(id,user); validate(c);
         var before=db.one("SELECT * FROM course WHERE id=? FOR UPDATE",id);
         db.update("UPDATE course SET title=?,description=?,category=?,subcategory=?,price=?,level=?,duration_hours=?,emoji=?,accent=?,published=?,grade=? WHERE id=?",c.title.trim(),c.description.trim(),c.category,c.subcategory,c.price,c.level,c.durationHours,c.emoji,c.accent,c.published,c.grade,id);
+        updateDetails(id,c);
         var after=db.one("SELECT * FROM course WHERE id=?",id);
         if(!before.equals(after)) notifications.courseUpdated(id,Boolean.TRUE.equals(before.get("published")) && !c.published());
+    }
+
+    private void updateDetails(long id,CourseInput input) {
+        db.update("UPDATE course SET summary=COALESCE(?,summary),audience=COALESCE(?,audience),prerequisites=COALESCE(?,prerequisites),outcomes=COALESCE(?,outcomes),language=COALESCE(?,language) WHERE id=?",
+            input.summary(),input.audience(),input.prerequisites(),input.outcomes(),input.language(),id);
     }
 
     /** Apply cross-field category rules and reject non-finite duration values. */

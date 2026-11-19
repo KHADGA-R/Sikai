@@ -25,15 +25,17 @@ test('instructor publishes an uploaded course; student enrolls, opens its file a
   await page.getByLabel('Description', { exact: true }).fill('Learn Nepali with a server-backed lesson.');
   await page.getByRole('combobox', { name: 'Main category', exact: true }).selectOption('Languages');
   await page.getByRole('combobox', { name: 'Subcategory', exact: true }).selectOption('Nepali');
-  await page.getByRole('combobox', { name: 'Status', exact: true }).selectOption({ label: 'Published' });
-  await page.getByRole('button', { name: '+ Add topic', exact: true }).click();
-  await page.getByLabel('Upload a lesson', { exact: false }).setInputFiles({ name: 'greetings.pdf', mimeType: 'application/pdf', buffer: Buffer.from('%PDF-1.4\nSikai integration handout\n%%EOF') });
-  await page.getByRole('button', { name: 'Save course content', exact: true }).click();
-  await expect(page.getByRole('status').filter({ hasText: 'Course saved and published.' })).toBeVisible();
+  await page.getByRole('button', { name: '+ Add module', exact: true }).click();
+  await page.getByLabel('Upload lesson files', { exact: false }).setInputFiles({ name: 'greetings.pdf', mimeType: 'application/pdf', buffer: Buffer.from('%PDF-1.4\nSikai integration handout\n%%EOF') });
+  await page.getByRole('checkbox', { name: 'Offer the primary lesson file as a free preview' }).check();
+  await page.getByRole('button', { name: 'Review and publish', exact: true }).click();
+  await page.getByRole('button', { name: 'Publish course', exact: true }).click();
+  await expect(page.getByRole('status').filter({ hasText: 'Course published.' })).toBeVisible();
   await page.reload();
   await page.getByRole('button', { name: 'Integrated Nepali Course', exact: false }).click();
   await expect(page.getByText('greetings.pdf', { exact: false }).first()).toBeVisible();
-  await expect(page.getByRole('combobox', { name: 'Status', exact: true }).locator('option:checked')).toHaveText('Published');
+  await page.getByRole('button', { name: 'Review and publish', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Publish changes', exact: true })).toBeVisible();
 
   const context = await browser.newContext();
   const student = await context.newPage();
@@ -44,6 +46,8 @@ test('instructor publishes an uploaded course; student enrolls, opens its file a
     await student.getByRole('link', { name: 'Integrated Nepali Course', exact: false }).first().click();
     await expect(student).toHaveURL(/\/courses\/\d+$/);
     const courseUrl = student.url();
+    await student.getByRole('button', { name: 'Free preview' }).click();
+    await expect(student.getByRole('link', { name: 'Open preview PDF' })).toHaveAttribute('href', /\/preview\/\d+$/);
     await student.getByRole('button', { name: 'Add to wishlist', exact: false }).click();
     await expect(student.getByRole('button', { name: 'Saved to wishlist', exact: false })).toBeVisible();
     await student.getByRole('link', { name: 'Enroll for free', exact: true }).click();

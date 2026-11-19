@@ -1,6 +1,6 @@
-import { HttpClient, HttpErrorResponse, HttpHeaders } from '@angular/common/http';
+import { HttpClient, HttpErrorResponse, HttpEventType, HttpHeaders, HttpResponse } from '@angular/common/http';
 import { Injectable, InjectionToken, inject, signal } from '@angular/core';
-import { firstValueFrom, timeout } from 'rxjs';
+import { filter, firstValueFrom, tap, timeout } from 'rxjs';
 
 /** Relative requests use the development proxy; production should route /api to Spring Boot. */
 export const API_BASE_URL = new InjectionToken<string>('API_BASE_URL', { providedIn: 'root', factory: () => '/api' });
@@ -39,11 +39,32 @@ export class ApiService {
     } catch (error) { throw this.error(error, token); }
   }
 
-  /** Download a protected lesson as a Blob so video, audio and PDF views can use an authenticated object URL. */
-  async file(lessonId: number | string): Promise<Blob> {
+  async upload<T>(path: string, body: FormData, progress: (percent: number) => void): Promise<T> {
     const token = this.token();
     try {
-      return await firstValueFrom(this.http.get(`${this.base}/lessons/${lessonId}/file`, {
+      const response = await firstValueFrom(this.http.post<T>(this.base + path, body, {
+        headers: token ? new HttpHeaders({ Authorization: `Bearer ${token}` }) : undefined,
+        observe: 'events', reportProgress: true
+      }).pipe(
+        timeout(120000),
+        tap(event => {
+          if (event.type === HttpEventType.UploadProgress && event.total) progress(Math.round(event.loaded / event.total * 100));
+        }),
+        filter((event): event is HttpResponse<T> => event.type === HttpEventType.Response)
+      ));
+      return response.body as T;
+    } catch (error) { throw this.error(error, token); }
+  }
+
+  /** Download a protected lesson as a Blob so video, audio and PDF views can use an authenticated object URL. */
+  async file(lessonId: number | string, resource: 'file' | 'slides' = 'file'): Promise<Blob> {
+    return this.blob(`/lessons/${lessonId}/${resource}`);
+  }
+
+  async blob(path: string): Promise<Blob> {
+    const token = this.token();
+    try {
+      return await firstValueFrom(this.http.get(this.base + path, {
         responseType: 'blob', headers: token ? new HttpHeaders({ Authorization: `Bearer ${token}` }) : undefined
       }).pipe(timeout(120000)));
     } catch (error) { throw this.error(error, token); }

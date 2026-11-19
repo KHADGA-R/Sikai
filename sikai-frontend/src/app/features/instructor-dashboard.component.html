@@ -23,7 +23,7 @@
     </section>
     <section class="panel"><div class="panel-heading"><h2>Recent course activity</h2><a routerLink="/instructor/courses">My Courses</a></div>
       @if(loading()){<p role="status">Loading courses...</p>}@else if(!error()){
-        @for(course of recent(); track course.id){<div class="activity"><strong>{{course.title}}</strong><p>{{course.topics.length}} topics · Saved on server</p><a routerLink="/instructor/courses" [queryParams]="{course:course.id}">Edit course</a></div>}
+        @for(course of recent(); track course.id){<div class="activity"><strong>{{course.title || 'Untitled course'}}</strong><p>{{course.published ? (course.revision ? 'Unpublished changes' : 'Published') : 'Draft'}} · {{course.topics.length}} modules</p><a routerLink="/instructor/courses" [queryParams]="{course:course.id}">Continue editing</a></div>}
         @empty{<p>No saved courses yet. Create your first recorded course and add lessons.</p><a class="button outline" routerLink="/instructor/courses">Create a course</a>}
       }@else{<p>Your course activity is temporarily unavailable.</p>}
     </section>

@@ -99,7 +99,8 @@ export class LearnHubStore {
   }
 
   /** Return cached real lessons in curriculum order; an unloaded curriculum yields an empty list. */
-  lessons(id: number) { return curriculumLessons(this.curricula()[id] ?? []); }
+  topics(id: number): ApiTopic[] { return this.curricula()[id] ?? []; }
+  lessons(id: number) { return curriculumLessons(this.topics(id)); }
   /** Distinguish a loaded empty curriculum from one that has not been requested yet. */
   hasContent(id: number): boolean { return this.curricula()[id] !== undefined; }
   /** Find a course in the combined public, detail, wishlist and enrollment caches. */

@@ -37,6 +37,51 @@ class PlatformIntegrationTest {
     private Map<String,Object> coupon(String type,int value) {
         return new HashMap<>(Map.of("code","SAVE_"+UUID.randomUUID().toString().substring(0,8),"discountType",type,"discountValue",value,"minimumSubtotal",0,"active",true,"perUserLimit",1));
     }
+    @Test void courseWorkspacePublishesAtomicallyAndRetainsLessonIdentity() throws Exception {
+        String teacher=register("instructor"), other=register("instructor");
+        String draftId=UUID.randomUUID().toString();
+        String workspace="/api/instructor/workspaces/"+draftId;
+        var file=new MockMultipartFile("file","recording.mp4","video/mp4",new byte[]{1,2,3});
+        String asset=json(mvc.perform(multipart("/api/instructor/workspaces/assets").file(file)
+            .header("Authorization","Bearer "+teacher)).andExpect(status().isOk()).andReturn()).path("id").asText();
+        mvc.perform(get("/api/instructor/workspaces/assets/"+asset).header("Authorization","Bearer "+other))
+            .andExpect(status().isNotFound());
+        String topicId=UUID.randomUUID().toString();
+        var lesson=new HashMap<String,Object>(Map.of("id",UUID.randomUUID().toString(),"title","Original lesson",
+            "kind","video","duration",120,"assetId",asset,"freePreview",true));
+        var topic=new HashMap<String,Object>(Map.of("id",topicId,"title","Module one","lessons",List.of(lesson)));
+        var draft=new HashMap<>(course(true));
+        draft.put("id",draftId);
+        draft.put("summary","Learn with recordings");
+        draft.put("topics",List.of(topic));
+        request("PUT",workspace,teacher,Map.of("revision",0,"course",draft),200);
+        request("PUT",workspace,teacher,Map.of("revision",0,"course",draft),409);
+        assertThat(request("GET","/api/instructor/workspaces",other,null,200)).isEmpty();
+        assertThat(request("GET","/api/instructor/courses",teacher,null,200)).isEmpty();
+        long courseId=request("POST",workspace+"/publish",teacher,Map.of("revision",1),200).path("id").asLong();
+        String courseUrl="/api/courses/"+courseId;
+        JsonNode syllabus=request("GET",courseUrl+"/syllabus",null,null,200);
+        String publishedTopic=syllabus.path(0).path("id").asText();
+        long lessonId=syllabus.path(0).path("lessons").path(0).path("id").asLong();
+        assertThat(request("GET",courseUrl,null,null,200).path("summary").asText()).isEqualTo("Learn with recordings");
+        mvc.perform(get(courseUrl+"/preview/"+lessonId)).andExpect(status().isOk()).andExpect(content().bytes(new byte[]{1,2,3}));
+        mvc.perform(get("/api/lessons/"+lessonId+"/file")).andExpect(status().isUnauthorized());
+        lesson.put("id",String.valueOf(lessonId));
+        lesson.remove("assetId");
+        lesson.put("title","Updated recording");
+        lesson.put("freePreview",false);
+        topic.put("id",publishedTopic);
+        draft.put("id",String.valueOf(courseId));
+        String update="/api/instructor/workspaces/"+courseId;
+        request("PUT",update,teacher,Map.of("revision",0,"course",draft),409);
+        request("PUT",update,teacher,Map.of("revision",2,"course",draft),200);
+        assertThat(request("GET",courseUrl+"/syllabus",null,null,200).at("/0/lessons/0/title").asText()).isEqualTo("Original lesson");
+        request("POST",update+"/publish",teacher,Map.of("revision",3),200);
+        var published=request("GET",courseUrl+"/syllabus",null,null,200).at("/0/lessons/0");
+        assertThat(published.path("title").asText()).isEqualTo("Updated recording");
+        assertThat(published.path("id").asLong()).isEqualTo(lessonId);
+        mvc.perform(get(courseUrl+"/preview/"+lessonId)).andExpect(status().isNotFound());
+    }
     @Test void couponsAreAdminManagedPrivateAndServerPriced() throws Exception {
         String admin=admin(),student=register("student"),other=register("student"),teacher=register("instructor");
         var data=coupon("percent",25);

@@ -25,7 +25,7 @@ public class CatalogController {
     @GetMapping("/courses/{id}") public Object course(@PathVariable long id,@AuthenticationPrincipal AuthService.User user) { return catalog.course(id,user); }
 
     /** List the authenticated instructor or administrator's own courses, including drafts. */
-    @GetMapping("/instructor/courses") public Object mine(@AuthenticationPrincipal AuthService.User user) { catalog.instructor(user); return db.list(CatalogService.SELECT+" WHERE c.owner_id=? ORDER BY c.id DESC",user.id()); }
+    @GetMapping("/instructor/courses") public Object mine(@AuthenticationPrincipal AuthService.User user) { catalog.instructor(user); return db.list(CatalogService.SELECT.replace(" FROM course c JOIN",",c.authoring_revision AS \"baseRevision\" FROM course c JOIN")+" WHERE c.owner_id=? ORDER BY c.id DESC",user.id()); }
 
     /** Create a course owned by the principal and return its computed catalog projection. */
     @PostMapping("/instructor/courses") @ResponseStatus(org.springframework.http.HttpStatus.CREATED)

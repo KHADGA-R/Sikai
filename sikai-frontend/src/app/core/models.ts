@@ -7,6 +7,7 @@ export interface Course {
   category: Category; subcategory?: string; price: number; isFree: boolean; level: Level;
   rating: number; durationHours: number; lessons: number; emoji: string;
   accent: string; published: boolean; grade?: number;
+  summary?: string; audience?: string; prerequisites?: string; outcomes?: string; language?: string; coverAssetId?: string;
 }
 /** Minimal learning projection: use a real numeric server ID when persisting completion. */
 export interface Lesson { id: number; title: string; minutes: number; }

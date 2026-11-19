@@ -20,10 +20,22 @@ import { formatTime } from '../core/instructor-content';
             @else if(lesson.kind === 'audio'){<audio #audio controls [src]="fileUrl()" style="width:100%"></audio><div class="chapter-links">@for(chapter of lesson.chapters; track chapter.seconds){<button class="button outline" (click)="audio.currentTime = chapter.seconds">{{formatTime(chapter.seconds)}} · {{chapter.title}}</button>}</div>}
             @else{<div class="video-placeholder"><span>📄</span><strong>{{lesson.title}}</strong><a class="button primary" [href]="fileUrl()" target="_blank" rel="noopener">Open PDF</a></div>}
           } @else if(!fileLoading()){<div class="video-placeholder"><span>{{c.emoji}}</span><strong>{{lesson.title}}</strong><small>{{lesson.hasFile ? 'Unable to load this file. Select the lesson again to retry.' : 'Your instructor has not uploaded this file yet.'}}</small></div>}
-          <div class="lesson-content"><h2>{{lesson.title}}</h2><p>{{lesson.fileName}}</p><button class="button primary" [disabled]="store.pending().includes('lesson:'+lesson.id)" (click)="store.toggleLesson(c.id,lesson.id)">{{isCompleted() ? '✓ Completed — mark incomplete' : '✓ Mark lesson complete'}}</button></div>
+          <div class="lesson-content"><h2>{{lesson.title}}</h2>@if(lesson.description){<p style="white-space:pre-line">{{lesson.description}}</p>}
+            @if(lesson.slidesName){<button type="button" class="button outline" [disabled]="slidesLoading()" (click)="downloadSlides(lesson.id, lesson.slidesName)">{{slidesLoading() ? 'Downloading slides…' : 'Download ' + lesson.slidesName}}</button>}<button class="button primary" [disabled]="store.pending().includes('lesson:'+lesson.id)" (click)="store.toggleLesson(c.id,lesson.id)">{{isCompleted() ? '✓ Completed — mark incomplete' : '✓ Mark lesson complete'}}</button></div>
         } @else if(!loading()){<div class="empty"><h2>No lessons yet</h2><p>Your instructor is preparing this course.</p></div>}
       </div><aside class="curriculum-panel"><h3>Course curriculum</h3><p>{{completedCount()}} / {{lessons().length}} completed</p><div class="progress-line"><span [style.width.%]="progressPercent()"></span></div>
-        @for(lesson of lessons(); track lesson.id){<button class="curriculum-item" [class.current]="selected()===lesson.id" (click)="choose(lesson.id)"><span>{{store.completed(c.id).includes(lesson.id) ? '✓' : '▷'}}</span><span>{{lesson.title}}<small>{{lesson.minutes}} min</small></span></button>}
+        @for(module of store.topics(c.id); track module.id) {
+          <div class="curriculum-module">
+            <h4>{{module.title}}</h4>
+            @if(module.objective){<p>{{module.objective}}</p>}
+            @for(lesson of module.lessons; track lesson.id){
+              <button class="curriculum-item" [class.current]="selected()===lesson.id" (click)="choose(lesson.id)">
+                <span aria-hidden="true">{{store.completed(c.id).includes(lesson.id) ? '✓' : '▷'}}</span>
+                <span>{{lesson.title}}<small>{{lesson.minutes}} min</small></span>
+              </button>
+            }
+          </div>
+        }
       </aside></div>
     } @else if(!store.personalLoading()){<div class="empty"><h2>Enroll to start learning</h2><a class="button primary" [routerLink]="['/courses',c.id]">View course</a></div>}
   } @else if(!loading()){<div class="empty">Course not found. <a routerLink="/">Browse courses</a></div>}
@@ -43,6 +55,7 @@ export class PlayerComponent {
   readonly isCompleted = computed(() => this.selected() !== null && this.store.completed(this.id()).includes(this.selected()!));
   readonly loading = signal(false); readonly error = signal(''); readonly fileLoading = signal(false); readonly fileUrl = signal('');
   readonly formatTime = formatTime;
+  readonly slidesLoading = signal(false);
   private readonly fileRetry = signal(0);
 
   /** Load the route's real curriculum, keep lesson selection valid and manage authenticated file object URLs with effect cleanup. */
@@ -68,6 +81,21 @@ export class PlayerComponent {
         .catch(e => { if (active) this.error.set(e.message); }).finally(() => { if (active) this.fileLoading.set(false); });
     });
   }
+  async downloadSlides(id: number, name: string): Promise<void> {
+    this.slidesLoading.set(true);
+    this.error.set('');
+    try {
+      const url = URL.createObjectURL(await this.api.file(id, 'slides'));
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = name;
+      link.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (error) {
+      this.error.set(error instanceof Error ? error.message : 'Unable to download slides.');
+    } finally { this.slidesLoading.set(false); }
+  }
+
   /** Select a real lesson ID and trigger a file retry even if that lesson was already selected. */
   choose(id: number): void { this.selected.set(id); this.fileRetry.update(n => n + 1); }
 }
