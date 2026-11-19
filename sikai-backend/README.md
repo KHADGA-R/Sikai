@@ -216,7 +216,7 @@ Configure environment variables in the backend terminal before starting Maven. S
 | `USD_NPR_RATE` | Merchant-selected NPR per USD conversion rate; default `0` disables new paid payments. No live exchange-rate feed is used |
 | `ESEWA_PRODUCT_CODE` | Your eSewa merchant product code; sandbox uses the provider's test merchant code |
 | `ESEWA_SECRET_KEY` | Your eSewa signing secret |
-| `ESEWA_FORM_URL` | Sandbox: `https://rc.esewa.com.np/api/epay/main/v2/form`; a signed POST redirects to the ePay UI on `rc-epay.esewa.com.np`. The old form path on the UI host returns 404 |
+| `ESEWA_FORM_URL` | Sandbox: `https://rc-epay.esewa.com.np/api/epay/main/v2/form` |
 | `ESEWA_STATUS_URL` | Sandbox: `https://rc.esewa.com.np/api/epay/transaction/status/` (verified reachable; the older `uat` hostname no longer resolves) |
 | `KHALTI_SECRET_KEY` | Merchant secret from Khalti's test dashboard for sandbox, live dashboard for production |
 | `KHALTI_API_URL` | Sandbox default: `https://dev.khalti.com/api/v2/` |

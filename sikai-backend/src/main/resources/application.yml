@@ -35,7 +35,7 @@ sikai:
     esewa:
       product-code: ${ESEWA_PRODUCT_CODE:}
       secret-key: ${ESEWA_SECRET_KEY:}
-      form-url: ${ESEWA_FORM_URL:https://rc.esewa.com.np/api/epay/main/v2/form}
+      form-url: ${ESEWA_FORM_URL:https://rc-epay.esewa.com.np/api/epay/main/v2/form}
       status-url: ${ESEWA_STATUS_URL:https://rc.esewa.com.np/api/epay/transaction/status/}
     khalti:
       secret-key: ${KHALTI_SECRET_KEY:}

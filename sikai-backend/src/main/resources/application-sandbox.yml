@@ -8,7 +8,7 @@ sikai:
     esewa:
       product-code: EPAYTEST
       secret-key: '8gBm/:&EnhH.1/q'
-      form-url: https://rc.esewa.com.np/api/epay/main/v2/form
+      form-url: ${ESEWA_FORM_URL:https://rc-epay.esewa.com.np/api/epay/main/v2/form}
       status-url: https://rc.esewa.com.np/api/epay/transaction/status/
     khalti:
       api-url: https://dev.khalti.com/api/v2/

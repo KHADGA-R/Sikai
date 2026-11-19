@@ -30,7 +30,7 @@ public class PaymentGateway {
     public PaymentGateway(ObjectMapper mapper,PaypalGateway paypal,
         @Value("${sikai.payments.esewa.product-code:}") String esewaCode,
         @Value("${sikai.payments.esewa.secret-key:}") String esewaSecret,
-        @Value("${sikai.payments.esewa.form-url:https://rc.esewa.com.np/api/epay/main/v2/form}") String esewaForm,
+        @Value("${sikai.payments.esewa.form-url:https://rc-epay.esewa.com.np/api/epay/main/v2/form}") String esewaForm,
         @Value("${sikai.payments.esewa.status-url:https://rc.esewa.com.np/api/epay/transaction/status/}") String esewaStatus,
         @Value("${sikai.payments.khalti.secret-key:}") String khaltiKey,
         @Value("${sikai.payments.khalti.api-url:https://dev.khalti.com/api/v2/}") String khaltiBase,
