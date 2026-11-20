@@ -35,6 +35,7 @@ public class SecurityConfig {
             .sessionManagement(s->s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(a->a
                 .requestMatchers(HttpMethod.OPTIONS,"/**").permitAll()
+                .requestMatchers(HttpMethod.GET,"/api/certificates/*").permitAll()
                 .requestMatchers("/api/auth/register","/api/auth/login","/actuator/health").permitAll()
                 .requestMatchers(HttpMethod.GET,"/api/courses","/api/courses/*","/api/courses/*/syllabus","/api/courses/*/preview/*","/api/courses/*/cover/*","/api/categories","/api/live-classes/teachers","/api/live-classes/slots").permitAll()
                 .requestMatchers("/api/admin/**").hasRole("admin")

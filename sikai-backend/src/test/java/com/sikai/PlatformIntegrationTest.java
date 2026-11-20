@@ -22,7 +22,7 @@ class PlatformIntegrationTest {
     @Autowired ObjectMapper mapper;
     private JsonNode json(MvcResult result) throws Exception { return mapper.readTree(result.getResponse().getContentAsString()); }
     private JsonNode request(String method,String path,String token,Object body,int status) throws Exception {
-        var builder=switch(method) { case "POST"->post(path); case "PUT"->put(path); case "DELETE"->delete(path); default->get(path); };
+        var builder=switch(method) { case "POST"->post(path); case "PUT"->put(path); case "PATCH"->patch(path); case "DELETE"->delete(path); default->get(path); };
         if(token!=null) builder.header("Authorization","Bearer "+token);
         if(body!=null) builder.contentType(MediaType.APPLICATION_JSON).content(mapper.writeValueAsBytes(body));
         return json(mvc.perform(builder).andExpect(status().is(status)).andReturn());
@@ -229,10 +229,33 @@ class PlatformIntegrationTest {
         mvc.perform(get("/api/lessons/"+lesson+"/file").header("Authorization","Bearer "+student)).andExpect(status().isForbidden());
         request("PUT","/api/me/enrollments/"+id,student,null,200);
         request("PUT","/api/me/enrollments/"+id,student,null,200);
+        request("PUT","/api/me/certificates/"+id,student,null,409);
         request("GET","/api/courses/"+id+"/content",student,null,200);
         mvc.perform(get("/api/lessons/"+lesson+"/file").header("Authorization","Bearer "+student)).andExpect(status().isOk()).andExpect(content().bytes(file.getBytes()));
         request("PUT","/api/me/progress/"+id+"/lessons/"+lesson,student,null,200);
         assertThat(request("GET","/api/me/progress",student,null,200).get(""+id).get(0).asLong()).isEqualTo(lesson);
+        String certificateRoute="/api/me/certificates/"+id;
+        var certificate=request("PUT",certificateRoute,student,null,200);
+        String certificateId=certificate.get("id").asText();
+        assertThat(certificate.get("shared").asBoolean()).isFalse();
+        assertThat(certificate.get("instructor").asText()).isEqualTo("Test instructor");
+        assertThat(certificate.get("durationHours").asDouble()).isEqualTo(2);
+        assertThat(certificate.get("level").asText()).isEqualTo("BEGINNER");
+        assertThat(certificate.get("completedAt").asLong()).isBetween(1L,certificate.get("issuedAt").asLong());
+        assertThat(request("PUT",certificateRoute,student,null,200)).isEqualTo(certificate);
+        request("GET",certificateRoute,other,null,404);
+        String sharingRoute="/api/me/certificates/"+certificateId;
+        String verificationRoute="/api/certificates/"+certificateId;
+        request("GET",verificationRoute,null,null,404);
+        request("PATCH",sharingRoute,other,Map.of("shared",true),404);
+        request("PATCH",sharingRoute,student,Map.of("shared",true),200);
+        var verified=request("GET",verificationRoute,null,null,200);
+        assertThat(verified.get("recipient")).isEqualTo(certificate.get("recipient"));
+        assertThat(verified.get("completedAt")).isEqualTo(certificate.get("completedAt"));
+        assertThat(verified.has("email")).isFalse();
+        assertThat(verified.has("userId")).isFalse();
+        request("PATCH",sharingRoute,student,Map.of("shared",false),200);
+        request("GET",verificationRoute,null,null,404);
         request("PUT","/api/me/wishlist/"+id,student,null,200);
         request("DELETE","/api/me/wishlist/"+id,student,null,200);
         long paid=request("POST","/api/instructor/courses",instructor,course(false),201).get("id").asLong();

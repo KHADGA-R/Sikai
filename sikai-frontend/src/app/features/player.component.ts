@@ -12,6 +12,9 @@ import { formatTime } from '../core/instructor-content';
   @if(course(); as c){
     @if(store.isEnrolled(c.id)){
       <div class="player-header"><a class="back" routerLink="/my-learning">← My learning</a><span class="eyebrow purple">LEARNING PLAYER</span><h1>{{c.title}}</h1><p>Work through your lessons and track your progress.</p></div>
+      @if(lessons().length && completedCount() === lessons().length) {
+        <p><a class="button outline" [routerLink]="['/certificates/earn', c.id]">Get your certificate</a></p>
+      }
       <div class="player-layout"><div>
         @if(selectedLesson(); as lesson){
           @if(fileLoading()){<p role="status">Loading lesson file...</p>}

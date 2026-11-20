@@ -60,6 +60,37 @@ test('instructor publishes an uploaded course; student enrolls, opens its file a
     await expect(student.getByRole('button', { name: 'Completed — mark incomplete', exact: false })).toBeVisible();
     await student.reload();
     await expect(student.getByRole('button', { name: 'Completed — mark incomplete', exact: false })).toBeVisible();
+    await student.getByRole('link', { name: 'Get your certificate' }).click();
+    await student.getByRole('button', { name: 'Generate certificate' }).click();
+    await expect(student.getByRole('heading', { name: 'Certificate of Completion' })).toBeVisible();
+    await expect(student.getByRole('heading', { name: 'Course Student' })).toBeVisible();
+    await expect(student.getByText('Completed on', { exact: true })).toBeVisible();
+    await expect(student.getByRole('link', { name: 'Verify this certificate' })).toHaveCount(0);
+    await student.getByRole('button', { name: 'Enable public link' }).click();
+    const shareHref = await student.getByRole('link', { name: 'LinkedIn' }).getAttribute('href');
+    const publicUrl = new URL(shareHref!).searchParams.get('url')!;
+    const qr = student.getByRole('link', { name: 'Verify this certificate' });
+    await expect(qr).toHaveAttribute('href', publicUrl);
+    await expect(qr.locator('img')).toHaveAttribute('src', /^data:image\/png;base64,/);
+    const visitorContext = await browser.newContext();
+    try {
+      const visitor = await visitorContext.newPage();
+      await visitor.goto(publicUrl);
+      await expect(visitor.getByText('Verified by Sikai')).toBeVisible();
+      await expect(visitor.getByRole('heading', { name: 'Integrated Nepali Course' })).toBeVisible();
+      await student.getByRole('button', { name: 'Turn off public link' }).click();
+      await expect(student.getByRole('button', { name: 'Enable public link' })).toBeVisible();
+      await visitor.reload();
+      await expect(visitor.getByRole('alert')).toHaveText('This certificate link is unavailable.');
+    } finally {
+      await visitorContext.close();
+    }
+    await student.getByRole('link', { name: 'Back to My Achievements' }).click();
+    await expect(student.getByRole('link', { name: 'Integrated Nepali Course certificate' })).toBeVisible();
+    const finisher = student.locator('.achievement').filter({ has: student.getByRole('heading', { name: 'Course Finisher' }) });
+    await expect(finisher.getByRole('link', { name: 'Share on X' })).toHaveAttribute('href', /Course\+Finisher/);
+    await expect(student.locator('.achievement').filter({ has: student.getByRole('heading', { name: 'Curious Mind' }) })
+      .getByRole('link', { name: 'Share on X' })).toHaveCount(0);
     await student.goto('/my-progress');
     await expect(student.getByText('100% complete', { exact: false }).first()).toBeVisible();
     await student.goto('/wishlist');

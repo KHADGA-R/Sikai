@@ -59,7 +59,8 @@ public class LearningController {
         catalog.accessContent(courseId,user); lockUser(user);
         Db.require(db.exists("SELECT l.id FROM lesson l JOIN topic t ON t.id=l.topic_id WHERE l.id=? AND t.course_id=?",lessonId,courseId),NOT_FOUND,"Lesson not found in course");
         if(!db.exists("SELECT user_id FROM progress WHERE user_id=? AND lesson_id=?",user.id(),lessonId)) {
-            db.update("INSERT INTO progress(user_id,lesson_id) VALUES (?,?)",user.id(),lessonId);
+            db.update("INSERT INTO progress(user_id,lesson_id,completed_at) VALUES (?,?,?)",
+                user.id(),lessonId,System.currentTimeMillis());
             notifications.completed(courseId,user);
         }
         return Map.of("success",true);
