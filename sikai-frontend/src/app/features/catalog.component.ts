@@ -1,4 +1,5 @@
 import { GRADE_GROUPS, matchesSchoolGrade } from '../core/grades';
+import { DatePipe } from '@angular/common';
 import { ThemeIconComponent } from '../shared/theme-icon.component';
 import { COURSE_CATEGORIES, subcategoriesFor } from '../core/categories';
 import { Component, computed, effect, inject, signal } from '@angular/core';
@@ -8,7 +9,24 @@ import { ActivatedRoute, RouterLink } from '@angular/router';
 import { map } from 'rxjs';
 import { CourseCardComponent } from './course-card.component';
 import { LearnHubStore } from '../core/store.service';
-@Component({ standalone: true, imports: [FormsModule, RouterLink, CourseCardComponent, ThemeIconComponent], template: `
+import { ApiService } from '../core/api.service';
+import { LiveClassDiscovery } from '../core/live-classes';
+
+const COURSE_PAGE_SIZE = 8;
+
+@Component({ standalone: true, imports: [FormsModule, RouterLink, DatePipe, CourseCardComponent, ThemeIconComponent], styles: [`
+  .discovery-row { margin: 0 0 32px; }
+  .discovery-row h3 { margin: 0 0 14px; font-size: 1.25rem; }
+  .live-discovery-card { display: grid; align-content: start; gap: 8px; padding: 16px; }
+  .live-discovery-card h4, .live-discovery-card p { margin: 0; }
+  .live-discovery-card p { font-size: .875rem; }
+  .live-discovery-card a { justify-self: start; margin-top: 4px; }
+  .all-courses-heading { margin: 0 0 14px; font-size: 1.25rem; }
+  .catalog-more { display: flex; justify-content: center; margin-top: 24px; }
+  @media (min-width: 1101px) {
+    .featured-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+  }
+`], template: `
 <section class="sikai-hero">
   <div class="hero-blob hero-blob-left" aria-hidden="true"></div>
   <div class="container landing-hero-grid">
@@ -39,7 +57,59 @@ import { LearnHubStore } from '../core/store.service';
 <section id="courses" class="container section"><div class="section-heading"><div><span class="eyebrow purple">KEEP YOUR CURIOSITY ALIVE</span><h2 id="discovery-heading" tabindex="-1">Discover Courses</h2><p>Discover your next skill. Make it part of your story.</p></div><span class="result-count">{{ filtered().length }} courses</span></div>
 <div class="filters"><select [ngModel]="category()" (ngModelChange)="chooseInterest($event)" aria-label="Filter category"><option value="All">All categories</option>@for(c of interests; track c.name){<option [value]="c.name">{{c.name}}</option>}</select><select [ngModel]="subcategory()" (ngModelChange)="subcategory.set($event)" [disabled]="category() === 'All'" aria-label="Filter subcategory"><option value="All">All subcategories</option>@for(s of availableSubcategories(); track s){<option [value]="s">{{s}}</option>}</select><select [ngModel]="level()" (ngModelChange)="level.set($event)" aria-label="Filter level"><option value="All">All levels</option><option value="BEGINNER">Beginner</option><option value="INTERMEDIATE">Intermediate</option><option value="ADVANCED">Advanced</option></select><select [ngModel]="price()" (ngModelChange)="price.set($event)" aria-label="Filter price"><option value="All">All prices</option><option value="Free">Free</option><option value="Paid">Paid</option></select></div>
 @if(academicOnly()) {<div class="grade-filter-summary" role="status"><span>Showing <strong>{{grade() === 'All' ? 'all academic courses' : 'Grade ' + grade() + ' academic courses'}}</strong> &middot; {{filtered().length}} available</span><button type="button" (click)="reset()">Clear grade filter <span aria-hidden="true">&times;</span></button></div>}
-<div class="course-grid">@for (course of filtered(); track course.id) { <app-course-card [course]="course" [wished]="store.isWished(course.id)" (wishlistClick)="store.toggleWishlist($event)" /> } @empty { <div class="empty full"><div class="empty-icon">🔎</div><h3>{{academicOnly() ? 'No academic courses available' + (grade() === 'All' ? ' yet' : ' for Grade ' + grade() + ' yet') : 'No matching courses'}}</h3><p>{{academicOnly() ? 'Try all academic courses or clear the filters to explore other learning opportunities.' : 'Courses for this topic may not be available yet. Try another category or explore all courses.'}}</p>@if(academicOnly() && grade() !== 'All'){<button type="button" class="button primary" (click)="browseGrade('All')">All academic courses</button> }<button class="button outline" (click)="reset()">Clear filters</button></div> }</div>
+@if (!hasFilters()) {
+  @if (featuredCourses().length) {
+    <section class="discovery-row" aria-labelledby="featured-courses-heading">
+      <h3 id="featured-courses-heading">{{ featuredCoursesHeading() }}</h3>
+      <div class="course-grid featured-grid">
+        @for (course of featuredCourses(); track course.id) {
+          <app-course-card [course]="course" [wished]="store.isWished(course.id)" (wishlistClick)="store.toggleWishlist($event)" />
+        }
+      </div>
+    </section>
+  }
+  @if (liveDiscoveryLoaded()) {
+  <section class="discovery-row" aria-labelledby="featured-live-heading">
+    <h3 id="featured-live-heading">{{ hasTrendingLiveClasses() ? 'Trending Live Classes' : 'Upcoming Live Classes' }}</h3>
+    @if (liveDiscovery().length) {
+      <div class="course-grid featured-grid">
+        @for (session of liveDiscovery(); track session.slotId) {
+          <article class="panel live-discovery-card">
+            <h4>{{ session.subject }}</h4>
+            <p>With {{ session.teacherName }}</p>
+            <p><time [attr.datetime]="session.start | date:'yyyy-MM-ddTHH:mm:ssZZZZZ'">{{ session.start | date:'EEE, MMM d · h:mm a z' }}</time></p>
+            <a class="button outline" routerLink="/live-classes" [queryParams]="{teacher: session.teacherId}" [attr.aria-label]="'View times with ' + session.teacherName">View times</a>
+          </article>
+        }
+      </div>
+    } @else {
+      <div class="panel live-discovery-card">
+        <p>No live class times are available right now.</p>
+        <a class="button outline" routerLink="/live-classes">Browse live classes</a>
+      </div>
+    }
+  </section>
+  }
+}
+<section [attr.aria-labelledby]="!hasFilters() && mainCourses().length ? 'all-courses-heading' : null">
+  @if (!hasFilters() && mainCourses().length) {
+    <h3 id="all-courses-heading" class="all-courses-heading">All Courses</h3>
+  }
+  <div class="course-grid" id="catalog-course-grid">
+    @for (course of visibleCourses(); track course.id) {
+      <app-course-card [course]="course" [wished]="store.isWished(course.id)" (wishlistClick)="store.toggleWishlist($event)" />
+    } @empty {
+      @if (!filtered().length) {
+        <div class="empty full"><div class="empty-icon">🔎</div><h3>{{academicOnly() ? 'No academic courses available' + (grade() === 'All' ? ' yet' : ' for Grade ' + grade() + ' yet') : 'No matching courses'}}</h3><p>{{academicOnly() ? 'Try all academic courses or clear the filters to explore other learning opportunities.' : 'Courses for this topic may not be available yet. Try another category or explore all courses.'}}</p>@if(academicOnly() && grade() !== 'All'){<button type="button" class="button primary" (click)="browseGrade('All')">All academic courses</button> }<button class="button outline" (click)="reset()">Clear filters</button></div>
+      }
+    }
+  </div>
+  @if (!hasFilters() && visibleCourses().length < mainCourses().length) {
+    <div class="catalog-more">
+      <button type="button" class="button outline" aria-controls="catalog-course-grid" (click)="loadMore()">Load more courses</button>
+    </div>
+  }
+</section>
 </section><section class="container cta-banner"><div><span class="eyebrow">FOR TEACHERS, CREATORS & CULTURAL KEEPERS</span><h2>Share what you know. Inspire what comes next.</h2><p>Bring your knowledge to Sikai. Create courses, share stories, and help others grow.</p></div><a routerLink="/instructor" class="button light">Become an Instructor &rarr;</a></section>` })
 export class CatalogComponent {
   readonly store = inject(LearnHubStore);
@@ -85,8 +155,34 @@ export class CatalogComponent {
 
   search = signal(''); category = signal('All'); level = signal('All'); price = signal('All');
   private readonly query = toSignal(inject(ActivatedRoute).queryParamMap.pipe(map(params => params.get('q') ?? '')), { initialValue: '' });
+  private readonly api = inject(ApiService);
+  readonly liveDiscovery = signal<LiveClassDiscovery[]>([]);
+  readonly liveDiscoveryLoaded = signal(false);
+  readonly hasTrendingLiveClasses = computed(() => this.liveDiscovery().some(session => session.recentBookings >= 3));
+  readonly hasFilters = computed(() => !!this.search().trim() || this.academicOnly() ||
+    [this.category(), this.subcategory(), this.level(), this.price()].some(filter => filter !== 'All'));
+  private readonly publishedCourses = computed(() => this.store.courses().filter(course => course.published));
+  private readonly trendingCourses = computed(() => this.publishedCourses()
+    .filter(course => (course.recentEnrollmentCount ?? 0) >= 3)
+    .sort((a, b) => (b.recentEnrollmentCount ?? 0) - (a.recentEnrollmentCount ?? 0) || (b.enrollmentCount ?? 0) - (a.enrollmentCount ?? 0) || a.id - b.id)
+    .slice(0, 5));
+  readonly featuredCourses = computed(() => {
+    const trending = this.trendingCourses();
+    if (trending.length === 5) return trending;
+    return [...this.publishedCourses()]
+      .sort((a, b) => (b.enrollmentCount ?? 0) - (a.enrollmentCount ?? 0) || b.rating - a.rating || a.id - b.id)
+      .slice(0, 5);
+  });
+  readonly featuredCoursesHeading = computed(() =>
+    this.trendingCourses().length === 5 ? 'Trending Courses' : 'Featured Courses');
 
   constructor() {
+    void this.api.request<LiveClassDiscovery[]>('GET', '/live-classes/discovery', undefined, false)
+      .then(classes => {
+        this.liveDiscovery.set(classes);
+        this.liveDiscoveryLoaded.set(true);
+      })
+      .catch(() => { /* The catalog remains available if live discovery is unavailable. */ });
     effect(() => {
       const query = this.query();
       this.reset();
@@ -98,6 +194,21 @@ export class CatalogComponent {
     (!this.search() || [c.title,c.description,c.instructor,c.category,c.subcategory ?? ''].join(' ').toLowerCase().includes(this.search().toLowerCase().trim())) &&
     (this.category() === 'All' || c.category === this.category()) && (this.subcategory() === 'All' || c.subcategory === this.subcategory()) && (this.level() === 'All' || c.level === this.level()) &&
     (this.price() === 'All' || (this.price() === 'Free' ? c.isFree : !c.isFree))));
+  readonly mainCourses = computed(() => {
+    const courses = this.filtered();
+    if (this.hasFilters()) return courses;
+    const featuredIds = new Set(this.featuredCourses().map(course => course.id));
+    return courses.filter(course => !featuredIds.has(course.id));
+  });
+  private readonly courseLimit = signal(COURSE_PAGE_SIZE);
+  readonly visibleCourses = computed(() => this.hasFilters()
+    ? this.mainCourses()
+    : this.mainCourses().slice(0, this.courseLimit()));
+
+  loadMore(): void {
+    this.courseLimit.update(limit => limit + COURSE_PAGE_SIZE);
+  }
+
   /** Restore every catalog filter to its initial unrestricted state. */
-  reset(): void { this.grade.set('All'); this.academicOnly.set(false); this.subcategory.set('All'); this.search.set(''); this.category.set('All'); this.level.set('All'); this.price.set('All'); }
+  reset(): void { this.grade.set('All'); this.academicOnly.set(false); this.subcategory.set('All'); this.search.set(''); this.category.set('All'); this.level.set('All'); this.price.set('All'); this.courseLimit.set(COURSE_PAGE_SIZE); }
 }

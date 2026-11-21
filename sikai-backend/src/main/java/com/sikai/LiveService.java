@@ -2,6 +2,7 @@ package com.sikai;
 
 import jakarta.validation.constraints.*;
 import java.net.URI;
+import java.time.Duration;
 import java.time.ZoneId;
 import java.util.*;
 import org.springframework.stereotype.Service;
@@ -31,6 +32,30 @@ public class LiveService {
 
     /** List only future open slots without confirmed bookings, deliberately omitting meeting URLs. */
     public Object slots() { return db.list(SLOTS+" WHERE s.closed=FALSE AND s.start_at>? AND NOT EXISTS (SELECT b.id FROM booking b WHERE b.slot_id=s.id AND b.status='confirmed') ORDER BY s.start_at",System.currentTimeMillis()); }
+
+    /** Return up to five open class times, prioritizing teachers with recent booking activity. */
+    public Object discovery() {
+        long now = System.currentTimeMillis();
+        return db.list("""
+            WITH activity AS (
+                SELECT s.teacher_id, COUNT(*) AS recent_bookings
+                FROM booking b JOIN live_slot s ON s.id = b.slot_id
+                WHERE b.status = 'confirmed' AND b.created_at >= ?
+                GROUP BY s.teacher_id
+            )
+            SELECT s.id AS "slotId", t.id AS "teacherId", u.name AS "teacherName", t.subject,
+                   s.start_at AS "start", COALESCE(a.recent_bookings, 0) AS "recentBookings"
+            FROM live_slot s
+            JOIN teacher t ON t.id = s.teacher_id
+            JOIN app_user u ON u.id = t.owner_id
+            LEFT JOIN activity a ON a.teacher_id = t.id
+            WHERE s.closed = FALSE AND s.start_at > ?
+              AND NOT EXISTS (SELECT 1 FROM booking b WHERE b.slot_id = s.id AND b.status = 'confirmed')
+            ORDER BY CASE WHEN a.recent_bookings >= 3 THEN a.recent_bookings ELSE 0 END DESC,
+                     s.start_at, s.id
+            LIMIT 5
+            """, now - Duration.ofDays(30).toMillis(), now);
+    }
 
     /**
      * Validate teaching privileges, taxonomy and photo data before inserting or updating the
@@ -98,7 +123,7 @@ public class LiveService {
         Db.require(!db.exists("SELECT id FROM booking WHERE slot_id=? AND status='confirmed' AND id<>?",input.slotId,replacing),CONFLICT,"Slot already booked");
         Db.require(!busy(user.id(),start,end,replacing) && !busy(owner,start,end,replacing),CONFLICT,"Booking overlaps another class for you or the teacher");
         if(!replacing.isEmpty()) db.update("UPDATE booking SET status='cancelled' WHERE id=?",replacing);
-        String id=Db.id(); db.update("INSERT INTO booking(id,slot_id,student_id,goals,timezone,status) VALUES (?,?,?,?,?,'confirmed')",id,input.slotId,user.id(),input.goals.trim(),input.timezone);
+        String id=Db.id(); db.update("INSERT INTO booking(id,slot_id,student_id,goals,timezone,status,created_at) VALUES (?,?,?,?,?,'confirmed',?)",id,input.slotId,user.id(),input.goals.trim(),input.timezone,System.currentTimeMillis());
         notifications.liveEvent(id,replacing.isEmpty()?"live_booked":"live_rescheduled",id,user.id());
         if(previous!=null && !owner.equals(previous.get("owner_id"))) notifications.liveEvent(replacing,"live_cancelled",id+"-previous",user.id());
         return id;

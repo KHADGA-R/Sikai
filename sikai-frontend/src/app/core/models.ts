@@ -5,7 +5,7 @@ export type { Category } from './categories';
 export interface Course {
   id: number; title: string; description: string; instructor: string;
   category: Category; subcategory?: string; price: number; isFree: boolean; level: Level;
-  rating: number; durationHours: number; lessons: number; emoji: string;
+  rating: number; enrollmentCount?: number; recentEnrollmentCount?: number; durationHours: number; lessons: number; emoji: string;
   accent: string; published: boolean; grade?: number;
   summary?: string; audience?: string; prerequisites?: string; outcomes?: string; language?: string; coverAssetId?: string;
 }

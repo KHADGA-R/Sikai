@@ -261,6 +261,32 @@ class PlatformIntegrationTest {
         long paid=request("POST","/api/instructor/courses",instructor,course(false),201).get("id").asLong();
         request("PUT","/api/me/enrollments/"+paid,student,null,409);
     }
+    @Test void discoveryRanksRecentBookingsAndExposesOnlyOpenTimesAndAggregateCounts() throws Exception {
+        String teacher=register("instructor"), other=register("instructor"), student=register("student");
+        var profile=Map.of("subject","Music","bio","Music teacher","languages","Nepali");
+        String id=request("PUT","/api/live-classes/teacher",teacher,profile,200).get("id").asText();
+        request("PUT","/api/live-classes/teacher",other,profile,200);
+        long start=System.currentTimeMillis()+86400000L;
+        for (int hour=0; hour<9; hour++) {
+            String slot=request("POST","/api/live-classes/slots",teacher,
+                Map.of("start",start+hour*3600000L,"minutes",30,"meetingUrl","https://example.test/private"),201).get("id").asText();
+            if (hour<3) request("POST","/api/live-classes/bookings",student,Map.of("slotId",slot,"goals","","timezone","UTC"),201);
+        }
+        request("POST","/api/live-classes/slots",other,Map.of("start",start,"minutes",30,"meetingUrl",""),201);
+        var classes=request("GET","/api/live-classes/discovery",null,null,200);
+        assertThat(classes).hasSize(5);
+        assertThat(classes.get(0).get("teacherId").asText()).isEqualTo(id);
+        assertThat(classes.get(0).get("start").asLong()).isEqualTo(start+3*3600000L);
+        assertThat(classes.get(0).get("recentBookings").asInt()).isEqualTo(3);
+        assertThat(classes.get(4).get("start").asLong()).isEqualTo(start+7*3600000L);
+        assertThat(classes.toString()).doesNotContain("private", "meetingUrl", "studentId");
+
+        long courseId=request("POST","/api/instructor/courses",teacher,course(true),201).get("id").asLong();
+        request("PUT","/api/me/enrollments/"+courseId,student,null,200);
+        var courseDetails=request("GET","/api/courses/"+courseId,null,null,200);
+        assertThat(courseDetails.get("enrollmentCount").asInt()).isEqualTo(1);
+        assertThat(courseDetails.get("recentEnrollmentCount").asInt()).isEqualTo(1);
+    }
     @Test void liveBookingPrivacyReschedulingAndCancellation() throws Exception {
         String teacher=register("instructor"),student=register("student"),stranger=register("student");
         request("PUT","/api/live-classes/teacher",teacher,Map.of("subject","Languages","bio","Nepali teacher","languages","Nepali, English"),200);

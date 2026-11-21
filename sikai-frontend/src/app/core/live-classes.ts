@@ -4,6 +4,14 @@ export function safeTeacherPhoto(value: unknown): value is string {
   return typeof value === 'string' && (value === '' || value.length <= 300000 && /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/]+={0,2}$/.test(value));
 }
 export interface LiveSlot { id: string; teacherId: string; start: number; end: number; meetingUrl: string; closed?: boolean; }
+export interface LiveClassDiscovery {
+  slotId: string;
+  teacherId: string;
+  teacherName: string;
+  subject: string;
+  start: number;
+  recentBookings: number;
+}
 export interface ClassMessage { id: string; senderId: string; senderName: string; text: string; sentAt: number; }
 export interface Booking { id: string; slotId: string; studentId: string; studentName: string; studentEmail?: string; timezone?: string; goals: string; status: 'confirmed' | 'cancelled'; messages: ClassMessage[]; }
 export interface LiveState { teachers: Teacher[]; slots: LiveSlot[]; bookings: Booking[]; }

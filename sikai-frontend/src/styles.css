@@ -35,3 +35,17 @@
 footer{background:var(--sikai-teal)}
 @media(max-width:1000px) and (min-width:741px){.site-header:not(.signed-in-header) .nav{gap:12px}.site-header:not(.signed-in-header) .nav nav{gap:14px}.site-header:not(.signed-in-header) .auth-actions{gap:12px}.brand app-brand-logo{width:155px}}
 @media(max-width:420px){.brand app-brand-logo{width:126px}.auth-actions{gap:8px}.auth-actions .button{padding:9px 11px}.auth-brand app-brand-logo{width:190px}}
+.featured-grid > app-course-card { min-width: 0; }
+.featured-grid .course-card {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+.featured-grid .course-art { flex-shrink: 0; }
+.featured-grid .card-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+}
+.featured-grid .card-title { overflow-wrap: anywhere; }
+.featured-grid .card-bottom { margin-top: auto; }

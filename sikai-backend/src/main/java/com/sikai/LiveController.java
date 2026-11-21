@@ -27,6 +27,8 @@ public class LiveController {
     /** Return future unbooked availability without exposing private meeting links. */
     @GetMapping("/slots") public Object slots() { return live.slots(); }
 
+    @GetMapping("/discovery") public Object discovery() { return live.discovery(); }
+
     /** Validate and save the authenticated instructor's teacher profile. */
     @PutMapping("/teacher") public Object teacher(@Valid @RequestBody LiveService.TeacherInput input,@AuthenticationPrincipal AuthService.User user) { return live.saveTeacher(input,user); }
 

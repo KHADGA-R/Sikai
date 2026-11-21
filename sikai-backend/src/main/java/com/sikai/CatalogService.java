@@ -22,7 +22,7 @@ public class CatalogService {
         @NotBlank @Size(max=40) String emoji,@NotNull @Pattern(regexp="violet|teal|pink|blue|green|orange") String accent,boolean published,@Min(1) @Max(12) Integer grade,
         @Size(max=240) String summary,@Size(max=4000) String audience,@Size(max=4000) String prerequisites,
         @Size(max=4000) String outcomes,@Size(max=80) String language) {}
-    public static final String SELECT="SELECT c.id,c.title,c.description,c.summary,c.audience,c.prerequisites,c.outcomes,c.language,c.cover_key AS \"coverAssetId\",u.name AS instructor,c.category,c.subcategory,c.price,(c.price=0) AS \"isFree\",c.level,c.rating,c.duration_hours AS \"durationHours\",(SELECT COUNT(*) FROM lesson l JOIN topic t ON t.id=l.topic_id WHERE t.course_id=c.id) AS lessons,c.emoji,c.accent,c.published,c.grade,c.owner_id AS \"ownerId\" FROM course c JOIN app_user u ON u.id=c.owner_id";
+    public static final String SELECT="SELECT c.id,c.title,c.description,c.summary,c.audience,c.prerequisites,c.outcomes,c.language,c.cover_key AS \"coverAssetId\",u.name AS instructor,c.category,c.subcategory,c.price,(c.price=0) AS \"isFree\",c.level,c.rating,(SELECT COUNT(*) FROM enrollment en WHERE en.course_id=c.id) AS \"enrollmentCount\",(SELECT COUNT(*) FROM enrollment en WHERE en.course_id=c.id AND en.enrolled_at >= CURRENT_TIMESTAMP - INTERVAL '30' DAY) AS \"recentEnrollmentCount\",c.duration_hours AS \"durationHours\",(SELECT COUNT(*) FROM lesson l JOIN topic t ON t.id=l.topic_id WHERE t.course_id=c.id) AS lessons,c.emoji,c.accent,c.published,c.grade,c.owner_id AS \"ownerId\" FROM course c JOIN app_user u ON u.id=c.owner_id";
     final Db db; private final ObjectMapper mapper;
     private final NotificationService notifications;
 

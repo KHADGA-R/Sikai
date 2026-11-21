@@ -37,7 +37,7 @@ public class SecurityConfig {
                 .requestMatchers(HttpMethod.OPTIONS,"/**").permitAll()
                 .requestMatchers(HttpMethod.GET,"/api/certificates/*").permitAll()
                 .requestMatchers("/api/auth/register","/api/auth/login","/actuator/health").permitAll()
-                .requestMatchers(HttpMethod.GET,"/api/courses","/api/courses/*","/api/courses/*/syllabus","/api/courses/*/preview/*","/api/courses/*/cover/*","/api/categories","/api/live-classes/teachers","/api/live-classes/slots").permitAll()
+                .requestMatchers(HttpMethod.GET,"/api/courses","/api/courses/*","/api/courses/*/syllabus","/api/courses/*/preview/*","/api/courses/*/cover/*","/api/categories","/api/live-classes/teachers","/api/live-classes/slots","/api/live-classes/discovery").permitAll()
                 .requestMatchers("/api/admin/**").hasRole("admin")
                 .anyRequest().authenticated())
             .exceptionHandling(e->e.authenticationEntryPoint((req,res,ex)->write(res,401,"Authentication required"))

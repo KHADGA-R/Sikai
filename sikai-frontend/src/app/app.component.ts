@@ -40,6 +40,7 @@ import { CartService } from './core/cart.service';
     color: #173c3d;
     font-size: 0.875rem;
   }
+  .site-header .nav nav a { flex-shrink: 0; white-space: nowrap; }
   @media (max-width: 950px) {
     .site-header .nav { flex-wrap: wrap; }
     .navbar-search { order: 2; flex-basis: 100%; max-width: none; }
@@ -65,10 +66,8 @@ import { CartService } from './core/cart.service';
           <a routerLink="/instructor/about" routerLinkActive="active">About me</a>
         }@else{
           <a routerLink="/" routerLinkActive="active" [routerLinkActiveOptions]="{exact:true}">Courses</a>
-          @if (!landingPage() || auth.isLoggedIn()) {
-            <a routerLink="/cart" routerLinkActive="active">Cart <span class="nav-count">{{cart.count()}}</span></a>
-          }
           @if(auth.isLoggedIn()){
+            <a routerLink="/cart" routerLinkActive="active">Cart <span class="nav-count">{{cart.count()}}</span></a>
             <a routerLink="/wishlist" routerLinkActive="active">Wishlist <span class="nav-count">{{store.wishlist().length}}</span></a>
             <a routerLink="/my-learning" routerLinkActive="active">My Learning</a>
             <a routerLink="/live-classes" routerLinkActive="active">Live Classes</a>
@@ -96,7 +95,6 @@ export class AppComponent {
     map(event => event.urlAfterRedirects)
   ), { initialValue: this.router.url });
   readonly standalonePage = computed(() => /^\/(?:admin|login|register|certificates)(?:[/?#;]|$)/.test(this.url()));
-  readonly landingPage = computed(() => /^\/(?:[?#]|$)/.test(this.url()));
 
   async searchCourses(event: Event, value: string): Promise<void> {
     event.preventDefault();

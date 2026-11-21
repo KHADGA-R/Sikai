@@ -45,7 +45,23 @@ export class LiveClassesComponent implements OnDestroy {
       .filter(Boolean).join(' ');
   }
   /** Choose the requested live-class view and populate saved profile fields when asynchronous state arrives, without overwriting an active profile edit. */
-  constructor() { const view = this.aboutPage ? 'profile' : this.route.snapshot.queryParamMap.get('view'); if((view === 'teach' || view === 'profile') && this.auth.isInstructor()) this.tab.set(view); if(view === 'profile' && !this.aboutPage && this.auth.isInstructor()) void this.router.navigateByUrl('/instructor/about', {replaceUrl:true}); this.loadProfile(); effect(() => { const teacher = this.myTeacher(); if (teacher && !this.editingProfile() && !this.busy()) this.loadProfile(); }); }
+  constructor() {
+    const params = this.route.snapshot.queryParamMap;
+    const view = this.aboutPage ? 'profile' : params.get('view');
+    if ((view === 'teach' || view === 'profile') && this.auth.isInstructor()) this.tab.set(view);
+    if (view === 'profile' && !this.aboutPage && this.auth.isInstructor()) {
+      void this.router.navigateByUrl('/instructor/about', { replaceUrl: true });
+    }
+    const teacherId = params.get('teacher');
+    if (teacherId && !this.aboutPage) {
+      this.tab.set('browse');
+      this.chooseTeacher(teacherId);
+    }
+    this.loadProfile();
+    effect(() => {
+      if (this.myTeacher() && !this.editingProfile() && !this.busy()) this.loadProfile();
+    });
+  }
   /** Copy saved teacher fields into the profile editor, supplying defaults for a new profile. */
   private loadProfile(): void {
     const teacher = this.myTeacher();
