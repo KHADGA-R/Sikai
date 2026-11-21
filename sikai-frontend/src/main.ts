@@ -7,6 +7,6 @@ import { AppComponent } from './app/app.component';
 import { routes } from './app/app.routes';
 
 bootstrapApplication(AppComponent, {
-  providers: [provideAppInitializer(() => inject(AuthService).ready), provideRouter(routes, withInMemoryScrolling({ scrollPositionRestoration: 'enabled' })),
+  providers: [provideAppInitializer(() => inject(AuthService).ready), provideRouter(routes, withInMemoryScrolling({ scrollPositionRestoration: 'enabled', anchorScrolling: 'enabled' })),
     provideHttpClient(withXsrfConfiguration({ cookieName: 'XSRF-TOKEN', headerName: 'X-XSRF-TOKEN' }))]
 }).catch(console.error);

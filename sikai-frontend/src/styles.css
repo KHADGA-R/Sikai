@@ -16,7 +16,7 @@
 /* Standalone Sikai imagery; no screenshot crops. */
 .sikai-hero{background-image:url("/assets/images/nepal-heritage.png");background-size:cover;background-position:center 48%}.sikai-hero:before{background:linear-gradient(90deg,#0d4b50f5 0%,#0d4b50df 35%,#0b44488a 55%,#0b444815 80%)}.culture-tile{background-size:cover;background-position:center}.culture-tile:nth-child(2){background-position:40% center}.culture-tile:nth-child(3){background-position:center}.culture-tile:nth-child(5){background-position:55% center}@media(max-width:740px){.sikai-hero{background-size:cover;background-position:64% center}.sikai-hero:before{background:linear-gradient(90deg,#0d4b50f5,#0d4b50bb 70%,#0d4b5077)}}
 
-.filters{grid-template-columns:2fr repeat(4,minmax(0,1fr))}.filters select:disabled{opacity:.6;cursor:not-allowed}@media(max-width:1000px){.filters{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:740px){.culture-tile>span{font-size:10px}}@media(max-width:480px){}
+.filters{grid-template-columns:repeat(4,minmax(0,1fr))}.filters select:disabled{opacity:.6;cursor:not-allowed}@media(max-width:1000px){.filters{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:740px){.culture-tile>span{font-size:10px}}@media(max-width:480px){}
 
 /* Signed-in learning navigation. */
 .signed-in-header{height:auto}.signed-in-header .nav{flex-wrap:wrap;padding-top:14px;row-gap:12px}.signed-in-header .auth-actions{margin-left:auto}.signed-in-header .nav nav{order:3;width:100%;gap:30px;overflow-x:auto;border-top:1px solid #e8e1d5;padding:14px 0;white-space:nowrap}.signed-in-header .nav nav a{flex-shrink:0}@media(max-width:740px){.signed-in-header .nav nav{gap:24px;padding:12px 0}}

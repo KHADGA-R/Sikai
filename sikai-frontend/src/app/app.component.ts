@@ -9,11 +9,54 @@ import { Component, computed, inject } from '@angular/core';
 import { Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { LearnHubStore } from './core/store.service';
 import { CartService } from './core/cart.service';
-@Component({ selector: 'app-root', standalone: true, imports: [RouterOutlet, RouterLink, RouterLinkActive, BrandLogoComponent, HeaderLayoutDirective, NotificationBellComponent], template: `
+@Component({ selector: 'app-root', standalone: true, imports: [RouterOutlet, RouterLink, RouterLinkActive, BrandLogoComponent, HeaderLayoutDirective, NotificationBellComponent], styles: [`
+  .navbar-search {
+    display: flex;
+    flex: 1 1 420px;
+    max-width: 520px;
+    min-width: 0;
+    background: #fff;
+    border: 1px solid #ded8cf;
+    border-radius: 999px;
+  }
+  .navbar-search:focus-within { outline: 2px solid #004c45; outline-offset: 2px; }
+  .navbar-search button {
+    display: grid;
+    place-items: center;
+    flex: 0 0 42px;
+    border: 0;
+    border-radius: 999px;
+    background: transparent;
+    color: #004c45;
+  }
+  .navbar-search input {
+    width: 100%;
+    min-width: 0;
+    padding: 10px 12px 10px 0;
+    border: 0;
+    border-radius: 999px;
+    outline: none;
+    background: transparent;
+    color: #173c3d;
+    font-size: 0.875rem;
+  }
+  @media (max-width: 950px) {
+    .site-header .nav { flex-wrap: wrap; }
+    .navbar-search { order: 2; flex-basis: 100%; max-width: none; }
+    .site-header .nav nav { order: 3; width: 100%; overflow-x: auto; }
+    .site-header .auth-actions { margin-inline-start: auto; }
+  }
+`], template: `
   @if (standalonePage()) { <router-outlet /> } @else {
   <div class="app-shell">
     <header appHeaderLayout class="site-header" [class.signed-in-header]="auth.isLoggedIn()"><div class="container nav">
       <a class="brand" routerLink="/" aria-label="Sikai home"><app-brand-logo /></a>
+      <form class="navbar-search" role="search" aria-label="Course search" (submit)="searchCourses($event, courseQuery.value)">
+        <button type="submit" aria-label="Search courses">
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5" /><path d="m16 16 4 4" /></svg>
+        </button>
+        <input #courseQuery type="search" aria-label="What would you like to learn?" placeholder="What would you like to learn?" />
+      </form>
       <nav aria-label="Main navigation">@if(auth.isAdmin()){<a routerLink="/admin">Admin</a>}
         @if(auth.isInstructor()){
           <a routerLink="/instructor" routerLinkActive="active" [routerLinkActiveOptions]="{exact:true}">Dashboard</a>
@@ -54,6 +97,13 @@ export class AppComponent {
   ), { initialValue: this.router.url });
   readonly standalonePage = computed(() => /^\/(?:admin|login|register|certificates)(?:[/?#;]|$)/.test(this.url()));
   readonly landingPage = computed(() => /^\/(?:[?#]|$)/.test(this.url()));
+
+  async searchCourses(event: Event, value: string): Promise<void> {
+    event.preventDefault();
+    const query = value.trim();
+    const navigated = await this.router.navigate(['/'], { queryParams: { q: query || null }, fragment: 'courses' });
+    if (!navigated) document.getElementById('courses')?.scrollIntoView({ block: 'start' });
+  }
   /** Revoke the server session and return to the catalog; local credentials are cleared even if revocation fails. */
   async logout(): Promise<void> { try { await this.auth.logout(); } catch { /* Local session is cleared even when the server is unavailable. */ } await this.router.navigateByUrl('/'); }
   /** Retry session restoration when needed, then reload public and authenticated learning data. */
