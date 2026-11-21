@@ -25,6 +25,7 @@ export class LiveClassesComponent implements OnDestroy {
   readonly teachers = computed(() => this.live.state().teachers.filter(t => (this.subject() === 'All' || t.subject === this.subject()) && (t.name + ' ' + t.subject + ' ' + t.languages).toLowerCase().includes(this.query().trim().toLowerCase())));
   readonly selectedTeacher = computed(() => this.live.state().teachers.find(t => t.id === this.teacherId()));
   readonly slots = computed(() => this.live.state().slots.filter(s => !s.closed && s.teacherId === this.teacherId() && s.start > this.now() && !this.live.state().bookings.some(b => b.slotId === s.id && b.status === 'confirmed') && (!this.date() || this.dateKey(s.start) === this.date())).sort((a,b) => a.start - b.start));
+  readonly activeSlot = computed(() => this.slots().find(slot => slot.id === this.selectedSlot()));
   readonly mySlots = computed(() => this.live.state().slots.filter(s => !s.closed && s.teacherId === this.myTeacher()?.id && s.end > this.now()).sort((a,b) => a.start - b.start));
   readonly bookings = computed(() => this.live.state().bookings.filter(b => b.studentId === this.auth.user()?.id || this.live.state().slots.some(s => s.id === b.slotId && s.teacherId === this.myTeacher()?.id)).map(b => ({ booking: b, slot: this.live.state().slots.find(s => s.id === b.slotId) })).filter(row => !!row.slot).sort((a,b) => b.slot!.start - a.slot!.start));
   readonly nextBooking = computed(() => {
@@ -56,6 +57,7 @@ export class LiveClassesComponent implements OnDestroy {
     if (teacherId && !this.aboutPage) {
       this.tab.set('browse');
       this.chooseTeacher(teacherId);
+      this.selectedSlot.set(params.get('slot') ?? '');
     }
     this.loadProfile();
     effect(() => {
@@ -105,13 +107,33 @@ export class LiveClassesComponent implements OnDestroy {
   /** Select a teacher and clear slot/date choices from the previous teacher. */
   chooseTeacher(id: string): void { this.teacherId.set(id); this.selectedSlot.set(''); this.date.set(''); this.error.set(''); }
   /** Require login before selecting a booking slot and preserve the live-class return destination. */
-  chooseSlot(id: string): void { if(!this.auth.isLoggedIn()) { void this.router.navigate(['/login'],{queryParams:{returnUrl:'/live-classes'}}); return; } this.selectedSlot.set(id); this.error.set(''); }
+  chooseSlot(id: string): void {
+    if (!this.auth.isLoggedIn()) {
+      const returnUrl = this.router.serializeUrl(this.router.createUrlTree(['/live-classes'], {
+        queryParams: { teacher: this.teacherId(), slot: id }
+      }));
+      void this.router.navigate(['/login'], { queryParams: { returnUrl } });
+      return;
+    }
+    this.selectedSlot.set(id);
+    this.error.set('');
+  }
   /** Switch between discovery, bookings and availability while routing profile editing and enforcing role/login requirements. */
   changeTab(tab: string): void { if(tab === 'profile' && this.auth.isInstructor()) { void this.router.navigateByUrl('/instructor/about'); return; } if((tab === 'teach' || tab === 'profile') && !this.auth.isInstructor()) { this.tab.set('browse'); return; } if(tab !== 'browse' && !this.auth.isLoggedIn()) { void this.router.navigate(['/login'],{queryParams:{returnUrl:'/live-classes'}}); return; } this.tab.set(tab); this.error.set(''); }
   /** Run one page mutation at a time, show feedback and refresh stale live state after an error. */
   async action(work: () => Promise<void>, message: string): Promise<void> { if(this.busy()) return; this.busy.set(true); this.error.set(''); this.notice.set(''); try { await work(); this.notice.set(message); } catch(e) { this.error.set(e instanceof Error ? e.message : 'Please try again.'); this.live.refresh(); } finally { this.busy.set(false); } }
   /** Confirm a new or replacement booking, then clear the booking draft and open the booking list. */
-  async book(): Promise<void> { await this.action(async () => { await this.live.book(this.selectedSlot(),this.goals,this.rescheduling() || undefined,this.timezone()); this.selectedSlot.set(''); this.rescheduling.set(''); this.goals = ''; this.tab.set('bookings'); }, 'Your class is confirmed. Add it to your calendar or send your teacher a note.'); }
+  async book(): Promise<void> {
+    const slot = this.activeSlot();
+    if (!slot || !this.auth.isLoggedIn()) return;
+    await this.action(async () => {
+      await this.live.book(slot.id, this.goals, this.rescheduling() || undefined, this.timezone());
+      this.selectedSlot.set('');
+      this.rescheduling.set('');
+      this.goals = '';
+      this.tab.set('bookings');
+    }, 'Your class is confirmed. Add it to your calendar or send your teacher a note.');
+  }
   /** Keep the original booking active while preparing a replacement slot selection. */
   reschedule(booking: Booking): void { this.rescheduling.set(booking.id); this.goals = booking.goals; const slot = this.live.state().slots.find(s => s.id === booking.slotId); this.tab.set('browse'); this.chooseTeacher(slot?.teacherId ?? ''); this.notice.set('Choose a new teacher or time. Your existing booking stays confirmed until you confirm the replacement.'); }
   /** Discard the replacement selection without cancelling the original confirmed booking. */

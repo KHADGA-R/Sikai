@@ -10,6 +10,7 @@ export interface LiveClassDiscovery {
   teacherName: string;
   subject: string;
   start: number;
+  end: number;
   recentBookings: number;
 }
 export interface ClassMessage { id: string; senderId: string; senderName: string; text: string; sentAt: number; }

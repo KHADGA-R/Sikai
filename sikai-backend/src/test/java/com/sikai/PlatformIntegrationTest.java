@@ -261,12 +261,12 @@ class PlatformIntegrationTest {
         long paid=request("POST","/api/instructor/courses",instructor,course(false),201).get("id").asLong();
         request("PUT","/api/me/enrollments/"+paid,student,null,409);
     }
-    @Test void discoveryRanksRecentBookingsAndExposesOnlyOpenTimesAndAggregateCounts() throws Exception {
+    @Test void discoveryOrdersOpenTimesChronologicallyAndExposesAggregateCounts() throws Exception {
         String teacher=register("instructor"), other=register("instructor"), student=register("student");
         var profile=Map.of("subject","Music","bio","Music teacher","languages","Nepali");
         String id=request("PUT","/api/live-classes/teacher",teacher,profile,200).get("id").asText();
-        request("PUT","/api/live-classes/teacher",other,profile,200);
-        long start=System.currentTimeMillis()+86400000L;
+        String otherId=request("PUT","/api/live-classes/teacher",other,profile,200).get("id").asText();
+        long start=System.currentTimeMillis()+600000L;
         for (int hour=0; hour<9; hour++) {
             String slot=request("POST","/api/live-classes/slots",teacher,
                 Map.of("start",start+hour*3600000L,"minutes",30,"meetingUrl","https://example.test/private"),201).get("id").asText();
@@ -275,10 +275,12 @@ class PlatformIntegrationTest {
         request("POST","/api/live-classes/slots",other,Map.of("start",start,"minutes",30,"meetingUrl",""),201);
         var classes=request("GET","/api/live-classes/discovery",null,null,200);
         assertThat(classes).hasSize(5);
-        assertThat(classes.get(0).get("teacherId").asText()).isEqualTo(id);
-        assertThat(classes.get(0).get("start").asLong()).isEqualTo(start+3*3600000L);
-        assertThat(classes.get(0).get("recentBookings").asInt()).isEqualTo(3);
-        assertThat(classes.get(4).get("start").asLong()).isEqualTo(start+7*3600000L);
+        assertThat(classes.get(0).get("teacherId").asText()).isEqualTo(otherId);
+        assertThat(classes.get(0).get("start").asLong()).isEqualTo(start);
+        assertThat(classes.get(0).get("end").asLong()).isEqualTo(start+1800000L);
+        assertThat(classes.get(1).get("teacherId").asText()).isEqualTo(id);
+        assertThat(classes.get(1).get("start").asLong()).isEqualTo(start+3*3600000L);
+        assertThat(classes.get(1).get("recentBookings").asInt()).isEqualTo(3);
         assertThat(classes.toString()).doesNotContain("private", "meetingUrl", "studentId");
 
         long courseId=request("POST","/api/instructor/courses",teacher,course(true),201).get("id").asLong();

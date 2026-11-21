@@ -33,7 +33,7 @@ public class LiveService {
     /** List only future open slots without confirmed bookings, deliberately omitting meeting URLs. */
     public Object slots() { return db.list(SLOTS+" WHERE s.closed=FALSE AND s.start_at>? AND NOT EXISTS (SELECT b.id FROM booking b WHERE b.slot_id=s.id AND b.status='confirmed') ORDER BY s.start_at",System.currentTimeMillis()); }
 
-    /** Return up to five open class times, prioritizing teachers with recent booking activity. */
+    /** Return the next five open class times, with aggregate booking activity for each teacher. */
     public Object discovery() {
         long now = System.currentTimeMillis();
         return db.list("""
@@ -44,15 +44,14 @@ public class LiveService {
                 GROUP BY s.teacher_id
             )
             SELECT s.id AS "slotId", t.id AS "teacherId", u.name AS "teacherName", t.subject,
-                   s.start_at AS "start", COALESCE(a.recent_bookings, 0) AS "recentBookings"
+                   s.start_at AS "start", s.end_at AS "end", COALESCE(a.recent_bookings, 0) AS "recentBookings"
             FROM live_slot s
             JOIN teacher t ON t.id = s.teacher_id
             JOIN app_user u ON u.id = t.owner_id
             LEFT JOIN activity a ON a.teacher_id = t.id
             WHERE s.closed = FALSE AND s.start_at > ?
               AND NOT EXISTS (SELECT 1 FROM booking b WHERE b.slot_id = s.id AND b.status = 'confirmed')
-            ORDER BY CASE WHEN a.recent_bookings >= 3 THEN a.recent_bookings ELSE 0 END DESC,
-                     s.start_at, s.id
+            ORDER BY s.start_at, s.id
             LIMIT 5
             """, now - Duration.ofDays(30).toMillis(), now);
     }

@@ -17,10 +17,17 @@ const COURSE_PAGE_SIZE = 8;
 @Component({ standalone: true, imports: [FormsModule, RouterLink, DatePipe, CourseCardComponent, ThemeIconComponent], styles: [`
   .discovery-row { margin: 0 0 32px; }
   .discovery-row h3 { margin: 0 0 14px; font-size: 1.25rem; }
-  .live-discovery-card { display: grid; align-content: start; gap: 8px; padding: 16px; }
+  .live-discovery { background: #eaf5f1; border: 1px solid #cae2da; border-radius: 18px; padding: clamp(14px, 2vw, 24px); }
+  .live-discovery-header { display: flex; align-items: baseline; justify-content: space-between; gap: 8px 20px; flex-wrap: wrap; margin-bottom: 16px; }
+  .live-discovery .live-discovery-header h3 { margin: 0; color: #004c45; }
+  .live-discovery-header a { color: #004c45; font-weight: 700; text-decoration: underline; text-underline-offset: 3px; }
+  .live-discovery-card { display: flex; flex-direction: column; gap: 8px; padding: 14px; border-color: #cae2da; }
   .live-discovery-card h4, .live-discovery-card p { margin: 0; }
   .live-discovery-card p { font-size: .875rem; }
-  .live-discovery-card a { justify-self: start; margin-top: 4px; }
+  .live-discovery-card time { display: grid; gap: 2px; color: #004c45; font-size: .875rem; font-weight: 800; }
+  .live-discovery-card time strong { font-size: 1rem; }
+  .live-discovery-card a { align-self: start; margin-top: auto; }
+  .live-discovery-empty { margin: 0; }
   .all-courses-heading { margin: 0 0 14px; font-size: 1.25rem; }
   .catalog-more { display: flex; justify-content: center; margin-top: 24px; }
   @media (min-width: 1101px) {
@@ -31,7 +38,6 @@ const COURSE_PAGE_SIZE = 8;
   <div class="hero-blob hero-blob-left" aria-hidden="true"></div>
   <div class="container landing-hero-grid">
     <div class="sikai-hero-copy">
-      <span class="hero-kicker">Learn &middot; Create &middot; Preserve</span>
       <h1>Rooted in Nepal.<br><em>Open to the <span class="hero-underline">World.</span></em></h1>
       <p>A world of culture, creativity, and possibility. Explore new skills, learn from passionate teachers, and carry your learning wherever life takes you.</p>
       <div class="hero-buttons"><a class="button primary" href="#courses" (click)="openDiscovery($event)">Explore Courses <span aria-hidden="true">&rarr;</span></a><a class="button hero-outline" routerLink="/instructor">Become an Instructor</a></div>
@@ -48,7 +54,7 @@ const COURSE_PAGE_SIZE = 8;
   </div>
 </section>
 <div class="container benefits-strip"><div class="benefits-grid"><div><app-theme-icon name="people" /><p><strong>Learn from Experts</strong><small>Passionate teachers &amp; mentors</small></p></div><div><app-theme-icon name="laptop" /><p><strong>Learn Anywhere</strong><small>At your pace, on any device</small></p></div><div><app-theme-icon name="growth" /><p><strong>Build Your Skills</strong><small>Turn curiosity into confidence</small></p></div><div><app-theme-icon name="globe" /><p><strong>Global Perspective</strong><small>Rooted in Nepal, connected worldwide</small></p></div></div></div>
-<section class="container cultural-section"><div class="cultural-heading"><div><span class="eyebrow purple">A LITTLE CURIOSITY GOES A LONG WAY</span><h2>Explore Learning Categories<span class="heading-spark" aria-hidden="true">&#10035;</span></h2></div></div><div class="culture-grid">@for(item of learningCategories; track item.name){<a href="#courses" class="culture-tile" [style.--category-background]="item.background" [style.--category-color]="item.color" (click)="openLearningCategory($event, item)"><app-theme-icon [name]="item.icon" /><span>{{item.name}}</span><p class="category-description">{{item.description}}</p><small>Explore courses <span aria-hidden="true">&rarr;</span></small></a>}</div><a class="all-courses-link" href="#courses" (click)="openDiscovery($event)">Find your next interest. Explore all courses <span aria-hidden="true">&rarr;</span></a></section>
+<section id="learning-categories" class="container cultural-section"><div class="cultural-heading"><div><span class="eyebrow purple">A LITTLE CURIOSITY GOES A LONG WAY</span><h2>Explore Learning Categories<span class="heading-spark" aria-hidden="true">&#10035;</span></h2></div></div><div class="culture-grid">@for(item of learningCategories; track item.name){<a href="#courses" class="culture-tile" [style.--category-background]="item.background" [style.--category-color]="item.color" (click)="openLearningCategory($event, item)"><app-theme-icon [name]="item.icon" /><span>{{item.name}}</span><p class="category-description">{{item.description}}</p><small>Explore courses <span aria-hidden="true">&rarr;</span></small></a>}</div><a class="all-courses-link" href="#courses" (click)="openDiscovery($event)">Find your next interest. Explore all courses <span aria-hidden="true">&rarr;</span></a></section>
 <section class="container grade-section" aria-labelledby="grade-heading">
   <div class="section-heading"><div><span class="eyebrow purple">A LITTLE SUPPORT FOR EVERY SCHOOL YEAR</span><h2 id="grade-heading">Explore by Grade</h2><p>Find academic courses for your child's school year, from maths foundations to exam preparation.</p></div><button type="button" class="button outline" (click)="browseGrade('All')">All academic courses <span aria-hidden="true">&rarr;</span></button></div>
   <div class="grade-groups">@for(group of gradeGroups; track group.name){<div class="grade-group"><h3>{{group.name}}</h3><p>{{group.description}}</p><div class="grade-options">@for(year of group.grades; track year){<button type="button" [attr.aria-pressed]="academicOnly() && grade() === year" (click)="browseGrade(year)"><small>Grade</small><strong>{{year}}</strong></button>}</div></div>}</div>
@@ -69,26 +75,31 @@ const COURSE_PAGE_SIZE = 8;
     </section>
   }
   @if (liveDiscoveryLoaded()) {
-  <section class="discovery-row" aria-labelledby="featured-live-heading">
-    <h3 id="featured-live-heading">{{ hasTrendingLiveClasses() ? 'Trending Live Classes' : 'Upcoming Live Classes' }}</h3>
-    @if (liveDiscovery().length) {
-      <div class="course-grid featured-grid">
-        @for (session of liveDiscovery(); track session.slotId) {
-          <article class="panel live-discovery-card">
-            <h4>{{ session.subject }}</h4>
-            <p>With {{ session.teacherName }}</p>
-            <p><time [attr.datetime]="session.start | date:'yyyy-MM-ddTHH:mm:ssZZZZZ'">{{ session.start | date:'EEE, MMM d · h:mm a z' }}</time></p>
-            <a class="button outline" routerLink="/live-classes" [queryParams]="{teacher: session.teacherId}" [attr.aria-label]="'View times with ' + session.teacherName">View times</a>
-          </article>
-        }
+    <section class="discovery-row live-discovery" aria-labelledby="featured-live-heading">
+      <div class="live-discovery-header">
+        <h3 id="featured-live-heading">Upcoming Live Classes</h3>
+        <a routerLink="/live-classes">View all live classes</a>
       </div>
-    } @else {
-      <div class="panel live-discovery-card">
-        <p>No live class times are available right now.</p>
-        <a class="button outline" routerLink="/live-classes">Browse live classes</a>
-      </div>
-    }
-  </section>
+      @if (liveDiscovery().length) {
+        <div class="course-grid featured-grid">
+          @for (session of liveDiscovery(); track session.slotId) {
+            <article class="panel live-discovery-card">
+              <time [attr.datetime]="session.start | date:'yyyy-MM-ddTHH:mm:ssZZZZZ'">
+                <span>{{ session.start | date:'EEE, MMM d' }}</span>
+                <strong>{{ session.start | date:'h:mm a z' }}</strong>
+              </time>
+              <h4>{{ session.subject }}</h4>
+              <p>With {{ session.teacherName }} &middot; {{ (session.end - session.start) / 60000 }} min</p>
+              <a class="button outline" routerLink="/live-classes"
+                [queryParams]="{teacher: session.teacherId, slot: session.slotId}"
+                [attr.aria-label]="'View class with ' + session.teacherName + ' at ' + (session.start | date:'EEE, MMM d, h:mm a z')">View class</a>
+            </article>
+          }
+        </div>
+      } @else {
+        <p class="live-discovery-empty">No live class times are available right now.</p>
+      }
+    </section>
   }
 }
 <section [attr.aria-labelledby]="!hasFilters() && mainCourses().length ? 'all-courses-heading' : null">
@@ -158,7 +169,6 @@ export class CatalogComponent {
   private readonly api = inject(ApiService);
   readonly liveDiscovery = signal<LiveClassDiscovery[]>([]);
   readonly liveDiscoveryLoaded = signal(false);
-  readonly hasTrendingLiveClasses = computed(() => this.liveDiscovery().some(session => session.recentBookings >= 3));
   readonly hasFilters = computed(() => !!this.search().trim() || this.academicOnly() ||
     [this.category(), this.subcategory(), this.level(), this.price()].some(filter => filter !== 'All'));
   private readonly publishedCourses = computed(() => this.store.courses().filter(course => course.published));

@@ -1,10 +1,12 @@
 import { afterNextRender, DestroyRef, Directive, ElementRef, inject } from '@angular/core';
+import { ViewportScroller } from '@angular/common';
 
 /** Keep sticky page panels below the header as its navigation wraps or fonts resize. */
 @Directive({ selector: '[appHeaderLayout]', standalone: true })
 export class HeaderLayoutDirective {
   private readonly element = inject<ElementRef<HTMLElement>>(ElementRef);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly viewport = inject(ViewportScroller);
 
   /** Measure the rendered header and observe size changes; disconnect and remove the CSS offset when its view is destroyed. */
   constructor() {
@@ -16,9 +18,11 @@ export class HeaderLayoutDirective {
       const observer = new ResizeObserver(update);
       update();
       observer.observe(header);
+      this.viewport.setOffset(() => [0, Math.ceil(header.getBoundingClientRect().height) + 12]);
       this.destroyRef.onDestroy(() => {
         observer.disconnect();
         root.style.removeProperty('--site-header-height');
+        this.viewport.setOffset([0, 0]);
       });
     });
   }

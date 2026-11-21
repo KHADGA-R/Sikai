@@ -1,5 +1,8 @@
 import { adminGuard, authGuard, instructorGuard } from './core/auth.guard';
 import { Routes } from '@angular/router';
+
+const siteInformation = () => import('./features/site-information.component').then(m => m.SiteInformationComponent);
+
 export const routes: Routes = [
   { path: 'certificates/earn/:courseId', canActivate: [authGuard], loadComponent: () => import('./features/certificate.component').then(m => m.CertificateComponent), title: 'Your course certificate | Sikai' },
   { path: 'certificates/:id', loadComponent: () => import('./features/certificate.component').then(m => m.CertificateComponent), title: 'Course certificate | Sikai' },
@@ -14,6 +17,12 @@ export const routes: Routes = [
   { path: 'my-achievements', canActivate: [authGuard], loadComponent: () => import('./features/learning-dashboard.component').then(m => m.LearningDashboardComponent), title: 'My Achievements | Sikai' },
   { path: 'live-classes', loadComponent: () => import('./features/live-classes.component').then(m => m.LiveClassesComponent), title: 'Live Classes | Sikai' },
   { path: 'community', loadComponent: () => import('./features/discover.component').then(m => m.DiscoverComponent), title: 'Community | Sikai' },
+  { path: 'about', loadComponent: siteInformation, title: 'About Us | Sikai' },
+  { path: 'careers', loadComponent: siteInformation, title: 'Careers | Sikai' },
+  { path: 'contact', loadComponent: siteInformation, title: 'Contact Us | Sikai' },
+  { path: 'blog', loadComponent: siteInformation, title: 'Blog | Sikai' },
+  { path: 'help', loadComponent: siteInformation, title: 'Help and Support | Sikai' },
+  { path: 'get-the-app', loadComponent: siteInformation, title: 'Get the app | Sikai' },
   { path: 'admin', canActivate: [adminGuard], loadComponent: () => import('./admin/admin.component').then(m => m.AdminComponent), title: 'Course management | Sikai Admin' },
   { path: 'login', loadComponent: () => import('./features/auth.component').then(m => m.AuthComponent), title: 'Log in | Sikai' },
   { path: 'register', loadComponent: () => import('./features/auth.component').then(m => m.AuthComponent), title: 'Create account | Sikai' },
