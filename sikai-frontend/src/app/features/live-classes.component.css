@@ -3,3 +3,30 @@
 .availability-row{flex-wrap:wrap}.availability-row label{flex:1;min-width:180px;margin:0}.availability-row>span{min-width:180px}
 
 .teacher-profile-panel,.availability-editor{max-width:760px}.teacher-identity{display:flex;align-items:center;gap:20px;margin:20px 0}.teacher-identity h3{margin:0 0 10px}.teacher-photo{width:112px;height:112px;border-radius:50%;object-fit:cover;flex-shrink:0;border:1px solid #d7ded4}.teacher-photo.compact{width:64px;height:64px}.photo-placeholder{display:flex;align-items:center;justify-content:center;background:#e1ece1;color:#004c45;font-size:28px;font-weight:700}.profile-bio{white-space:pre-wrap;overflow-wrap:anywhere}.teacher-profile-panel fieldset{border:0;padding:0;margin:0;min-width:0}.teacher-profile-panel small{display:block;color:#7b8178;line-height:1.6;margin-bottom:12px}.teacher-identity>div{min-width:0}@media(max-width:540px){.teacher-profile-panel .teacher-identity{align-items:flex-start;flex-direction:column}}
+.booking-countdown {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px 24px;
+  margin-bottom: 20px;
+  border-inline-start: 4px solid #004c45;
+}
+.booking-countdown h3, .booking-countdown p { margin: 0; }
+.booking-countdown h3 { color: #004c45; }
+.booking-countdown p { margin-top: 6px; }
+.booking-countdown-time {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 8px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: #fce9ed;
+  color: #841c3b;
+  font-size: 0.875rem;
+}
+.booking-countdown-time strong {
+  font-size: 1.125rem;
+  font-variant-numeric: tabular-nums;
+}

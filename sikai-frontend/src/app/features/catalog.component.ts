@@ -14,7 +14,7 @@ import { LearnHubStore } from '../core/store.service';
       <span class="hero-kicker">Learn &middot; Create &middot; Preserve</span>
       <h1>Rooted in Nepal.<br><em>Open to the <span class="hero-underline">World.</span></em></h1>
       <p>A world of culture, creativity, and possibility. Explore new skills, learn from passionate teachers, and carry your learning wherever life takes you.</p>
-      <div class="hero-buttons"><a class="button primary" href="#courses">Explore Courses <span aria-hidden="true">&rarr;</span></a><a class="button hero-outline" routerLink="/instructor">Become an Instructor</a></div>
+      <div class="hero-buttons"><a class="button primary" href="#courses" (click)="openDiscovery($event)">Explore Courses <span aria-hidden="true">&rarr;</span></a><a class="button hero-outline" routerLink="/instructor">Become an Instructor</a></div>
       <div class="hero-highlights"><span><app-theme-icon name="play" />Live &amp; On-demand</span><span><app-theme-icon name="people" />Expert Instructors</span><span><app-theme-icon name="star" />Learner Community</span></div>
     </div>
     <div class="landing-hero-art">
@@ -28,7 +28,7 @@ import { LearnHubStore } from '../core/store.service';
   </div>
 </section>
 <div class="container benefits-strip"><div class="benefits-grid"><div><app-theme-icon name="people" /><p><strong>Learn from Experts</strong><small>Passionate teachers &amp; mentors</small></p></div><div><app-theme-icon name="laptop" /><p><strong>Learn Anywhere</strong><small>At your pace, on any device</small></p></div><div><app-theme-icon name="growth" /><p><strong>Build Your Skills</strong><small>Turn curiosity into confidence</small></p></div><div><app-theme-icon name="globe" /><p><strong>Global Perspective</strong><small>Rooted in Nepal, connected worldwide</small></p></div></div></div>
-<section class="container cultural-section"><div class="cultural-heading"><div><span class="eyebrow purple">A LITTLE CURIOSITY GOES A LONG WAY</span><h2>Explore Learning Categories<span class="heading-spark" aria-hidden="true">&#10035;</span></h2></div></div><div class="culture-grid">@for(item of learningCategories; track item.name){<a href="#courses" class="culture-tile" [style.--category-background]="item.background" [style.--category-color]="item.color" (click)="openLearningCategory($event, item)"><app-theme-icon [name]="item.icon" /><span>{{item.name}}</span><p class="category-description">{{item.description}}</p><small>Explore courses <span aria-hidden="true">&rarr;</span></small></a>}</div><a class="all-courses-link" href="#courses" (click)="reset()">Find your next interest. Explore all courses <span aria-hidden="true">&rarr;</span></a></section>
+<section class="container cultural-section"><div class="cultural-heading"><div><span class="eyebrow purple">A LITTLE CURIOSITY GOES A LONG WAY</span><h2>Explore Learning Categories<span class="heading-spark" aria-hidden="true">&#10035;</span></h2></div></div><div class="culture-grid">@for(item of learningCategories; track item.name){<a href="#courses" class="culture-tile" [style.--category-background]="item.background" [style.--category-color]="item.color" (click)="openLearningCategory($event, item)"><app-theme-icon [name]="item.icon" /><span>{{item.name}}</span><p class="category-description">{{item.description}}</p><small>Explore courses <span aria-hidden="true">&rarr;</span></small></a>}</div><a class="all-courses-link" href="#courses" (click)="openDiscovery($event)">Find your next interest. Explore all courses <span aria-hidden="true">&rarr;</span></a></section>
 <section class="container grade-section" aria-labelledby="grade-heading">
   <div class="section-heading"><div><span class="eyebrow purple">A LITTLE SUPPORT FOR EVERY SCHOOL YEAR</span><h2 id="grade-heading">Explore by Grade</h2><p>Find academic courses for your child's school year, from maths foundations to exam preparation.</p></div><button type="button" class="button outline" (click)="browseGrade('All')">All academic courses <span aria-hidden="true">&rarr;</span></button></div>
   <div class="grade-groups">@for(group of gradeGroups; track group.name){<div class="grade-group"><h3>{{group.name}}</h3><p>{{group.description}}</p><div class="grade-options">@for(year of group.grades; track year){<button type="button" [attr.aria-pressed]="academicOnly() && grade() === year" (click)="browseGrade(year)"><small>Grade</small><strong>{{year}}</strong></button>}</div></div>}</div>
@@ -70,10 +70,10 @@ export class CatalogComponent {
   readonly subcategory = signal('All');
   readonly availableSubcategories = computed(() => subcategoriesFor(this.category()));
   /** Replace anchor navigation with category filtering, result scrolling and keyboard focus placement. */
-  openDiscovery(event: Event, category: string): void {
+  openDiscovery(event: Event, category = 'All'): void {
     event.preventDefault();
     this.reset();
-    this.chooseInterest(category);
+    this.category.set(category);
     document.getElementById('courses')?.scrollIntoView({ block: 'start' });
     document.getElementById('discovery-search')?.focus({ preventScroll: true });
   }

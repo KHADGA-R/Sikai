@@ -14,7 +14,7 @@ export class LiveClassesComponent implements OnDestroy {
   readonly tab = signal(this.auth.isInstructor() ? 'bookings' : 'browse'); readonly query = signal(''); readonly subject = signal('All'); readonly teacherId = signal(''); readonly date = signal('');
   readonly timezone = signal(Intl.DateTimeFormat().resolvedOptions().timeZone);
   readonly timezones = [...new Set([this.timezone(), 'Asia/Kathmandu', 'UTC', 'America/Los_Angeles', 'Europe/London', 'Asia/Kolkata', 'Australia/Sydney'])];
-  readonly now = signal(Date.now()); private readonly timer = setInterval(() => { this.now.set(Date.now()); },30000);
+  readonly now = signal(Date.now()); private readonly timer = setInterval(() => { this.now.set(Date.now()); }, 1000);
   readonly busy = signal(false); readonly error = signal(''); readonly notice = signal(''); readonly selectedSlot = signal(''); readonly rescheduling = signal('');
   goals = ''; start = ''; minutes = 45; meetingUrl = ''; bio = ''; languages = ''; teachingSubject = 'Culture & Heritage';
   photoUrl = '';
@@ -27,6 +27,23 @@ export class LiveClassesComponent implements OnDestroy {
   readonly slots = computed(() => this.live.state().slots.filter(s => !s.closed && s.teacherId === this.teacherId() && s.start > this.now() && !this.live.state().bookings.some(b => b.slotId === s.id && b.status === 'confirmed') && (!this.date() || this.dateKey(s.start) === this.date())).sort((a,b) => a.start - b.start));
   readonly mySlots = computed(() => this.live.state().slots.filter(s => !s.closed && s.teacherId === this.myTeacher()?.id && s.end > this.now()).sort((a,b) => a.start - b.start));
   readonly bookings = computed(() => this.live.state().bookings.filter(b => b.studentId === this.auth.user()?.id || this.live.state().slots.some(s => s.id === b.slotId && s.teacherId === this.myTeacher()?.id)).map(b => ({ booking: b, slot: this.live.state().slots.find(s => s.id === b.slotId) })).filter(row => !!row.slot).sort((a,b) => b.slot!.start - a.slot!.start));
+  readonly nextBooking = computed(() => {
+    const studentId = this.auth.user()?.id;
+    const now = this.now();
+    return this.bookings().filter(({ booking, slot }) =>
+      booking.studentId === studentId && booking.status === 'confirmed' && slot && slot.start > now
+    ).at(-1)?.slot;
+  });
+
+  countdown(start: number): string {
+    const seconds = Math.max(0, Math.ceil((start - this.now()) / 1000));
+    if (seconds < 60) return `${seconds}s`;
+    const minutes = Math.floor(seconds / 60);
+    const days = Math.floor(minutes / 1440);
+    const hours = Math.floor(minutes / 60) % 24;
+    return [days ? `${days}d` : '', days || hours ? `${hours}h` : '', `${minutes % 60}m`]
+      .filter(Boolean).join(' ');
+  }
   /** Choose the requested live-class view and populate saved profile fields when asynchronous state arrives, without overwriting an active profile edit. */
   constructor() { const view = this.aboutPage ? 'profile' : this.route.snapshot.queryParamMap.get('view'); if((view === 'teach' || view === 'profile') && this.auth.isInstructor()) this.tab.set(view); if(view === 'profile' && !this.aboutPage && this.auth.isInstructor()) void this.router.navigateByUrl('/instructor/about', {replaceUrl:true}); this.loadProfile(); effect(() => { const teacher = this.myTeacher(); if (teacher && !this.editingProfile() && !this.busy()) this.loadProfile(); }); }
   /** Copy saved teacher fields into the profile editor, supplying defaults for a new profile. */

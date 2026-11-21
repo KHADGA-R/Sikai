@@ -28,7 +28,18 @@ mvn spring-boot:run
 | `http://localhost:8080/actuator/health` | Basic health check; healthy response is `{"status":"UP"}` |
 | `http://localhost:4200` | Default Angular address when the separate frontend is running |
 
-Maven downloads dependencies on its first run. Flyway creates the schema automatically. The initial database has no sample accounts or courses. Register an instructor and publish a free course to test the connected learner workflow.
+Maven downloads dependencies on its first run. Flyway creates the schema automatically.
+
+### Sample courses
+
+With the local API running, import 20 published sample courses across all eight catalog categories from the workspace root:
+
+```powershell
+$instructor = Get-Credential -UserName 'catalog-tester@example.test' -Message 'Enter a password for the sample instructor'
+.\sikai-backend\seed-sample-courses.ps1 -Credential $instructor -RegisterInstructor
+```
+
+Use `-RegisterInstructor` only when creating a new instructor account. For an existing instructor, supply their credentials and omit the switch. The importer skips matching course titles owned by that instructor. The fixtures include free and paid courses, all three difficulty levels, and several grade levels for catalog, enrollment, and checkout testing.
 
 ### Local data
 
@@ -101,13 +112,15 @@ Set environment variables in the terminal before starting the application.
 | `TOKEN_HOURS` | `24`; allowed range is 1 through 720 |
 | `UPLOAD_DIRECTORY` | `./uploads` |
 | `ADMIN_EMAIL`, `ADMIN_PASSWORD` | Optional first-run administrator credentials |
-| `EMAIL_ENABLED` | `false`; enable after configuring SMTP |
+| `EMAIL_ENABLED` | `false`; enable booking confirmations and reminders after configuring SMTP |
 | `EMAIL_FROM` | `no-reply@sikai.local`; replace with a verified sender |
 | `SMTP_HOST`, `SMTP_PORT` | `localhost`, `587` |
 | `SMTP_USERNAME`, `SMTP_PASSWORD` | SMTP credentials |
 | `SMTP_AUTH`, `SMTP_STARTTLS` | `true`, `true` |
 
 Spring Boot does not automatically read `.env` files in this project. Export variables in your shell. Docker Compose reads `.env` for its own substitutions.
+
+With SMTP enabled, the backend checks confirmed live-class bookings every 30 seconds and emails the student at the 24-hour and 15-minute marks. Bookings made after a reminder window opens are eligible for that window's reminder. Failed delivery is retried while the window remains open. The student countdown appears in **Live Classes → My bookings**.
 
 ### PostgreSQL
 

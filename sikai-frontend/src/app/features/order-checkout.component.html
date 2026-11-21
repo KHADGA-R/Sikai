@@ -24,7 +24,7 @@
           @if (message() && !attempt()) {<p role="status">{{message()}}</p>}
         </section>
       </div><aside class="checkout-panel order-summary"><h2>Order summary · {{q.items.length}} courses</h2>
-        <div class="order-items">@for (item of q.items; track item.courseId) {<div class="order-course"><div class="order-art teal"><app-course-artwork [courseId]="item.courseId" /></div><div><h3>{{item.title}}</h3><p>{{item.amount === 0 ? 'Free' : (item.amount | currency:'USD')}}</p></div></div>}</div>
+        <div class="order-items">@for (item of q.items; track item.courseId) {<div class="order-course"><div class="order-art teal"><app-course-artwork [courseId]="item.courseId" [title]="item.title" /></div><div><h3>{{item.title}}</h3><p>{{item.amount === 0 ? 'Free' : (item.amount | currency:'USD')}}</p></div></div>}</div>
         <app-coupon-entry [orderId]="q.orderId" [couponCode]="q.couponCode ?? null" [locked]="busy() || !!attempt()" (busyChange)="couponBusy.set($event); accepted.set(false)" (changed)="reloadQuote()" />
         <dl><div><dt>Catalog subtotal</dt><dd>{{(q.subtotal ?? q.originalAmount) | currency:'USD'}}</dd></div>@if(q.discountAmount){<div class="discount-row"><dt>Discount ({{q.couponCode}})</dt><dd>-{{q.discountAmount | currency:'USD'}}</dd></div>}<div class="order-total"><dt>Total</dt><dd>{{total() | currency:(currency() ?? 'USD'):'code'}}</dd></div></dl>
         @if (error()) {<p class="error-note" role="alert">{{error()}}</p>}

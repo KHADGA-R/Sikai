@@ -71,6 +71,15 @@
   }
   @if(tab() === 'bookings'){
     <h2 class="bookings-heading">{{auth.isInstructor() ? 'My Classes' : 'My bookings'}}</h2>
+    @if(nextBooking(); as upcoming) {
+      <section class="panel booking-countdown" aria-labelledby="next-live-class">
+        <div>
+          <h3 id="next-live-class">Next live class</h3>
+          <p>{{teacherName(upcoming.teacherId)}} &middot; {{when(upcoming.start)}}</p>
+        </div>
+        <div class="booking-countdown-time" role="timer">Starts in <strong>{{countdown(upcoming.start)}}</strong></div>
+      </section>
+    }
     <div class="booking-list">@for(row of bookings(); track row.booking.id){@if(row.slot; as slot){<article class="panel booking-card"><div class="booking-header"><div><span class="subject-label">{{row.booking.status === 'cancelled' ? 'Cancelled' : slot.end <= now() ? 'Past session' : 'Confirmed'}}</span><h2>{{teacherName(slot.teacherId)}}</h2><p>{{when(slot.start)}} &middot; {{(slot.end-slot.start)/60000}} minutes</p><small>Student: {{row.booking.studentName}}</small></div></div>@if(row.booking.goals){<div class="learning-goals"><strong>Learning goals</strong><p>{{row.booking.goals}}</p></div>}
       @if(row.booking.status === 'confirmed') {<div class="booking-actions">@if(slot.start > now()){<button class="button outline" (click)="calendar(row.booking,slot)">Add to calendar</button>@if(row.booking.studentId === auth.user()?.id){<button class="button outline" [disabled]="busy()" (click)="reschedule(row.booking)">Reschedule</button>}<button class="button outline" [disabled]="busy()" (click)="cancel(row.booking)">Cancel class</button>}
         @if(slot.end > now() && slot.meetingUrl){<a class="button primary" [href]="slot.meetingUrl" target="_blank" rel="noopener noreferrer">Open meeting</a>}@else if(slot.end > now()){<p class="booking-note">No meeting link yet. Use messages to coordinate with your teacher.</p>}</div>

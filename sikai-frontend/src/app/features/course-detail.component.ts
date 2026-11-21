@@ -7,7 +7,7 @@ import { CartService } from '../core/cart.service';
 import { toSignal } from '@angular/core/rxjs-interop';
 @Component({ standalone:true, imports:[RouterLink, CourseArtworkComponent], template:`
 <div class="container detail-layout">@if(error()){<p class="error-note" role="alert">{{error()}}</p>}@if(loading()){<p role="status">Loading course...</p>}@if (course(); as c) {
-  <div><a class="back" routerLink="/">← Back to courses</a><div class="detail-art" [class]="'detail-art '+c.accent">@if(c.coverAssetId){<img [src]="coverUrl(c.coverAssetId)" alt="" style="width:100%;height:100%;object-fit:cover" />}@else{<app-course-artwork [courseId]="c.id" />}</div><span class="eyebrow purple">{{c.category}} @if(c.subcategory){ / {{c.subcategory}} } · {{c.level.toLowerCase()}}</span><h1>{{c.title}}</h1>@if(c.summary){<p class="lead">{{c.summary}}</p>}<p style="white-space:pre-line">{{c.description}}</p><div class="detail-badges"><span>★ {{c.rating.toFixed(1)}} rating</span><span>◷ {{c.durationHours}} hours</span><span>▤ {{c.lessons}} lessons</span><span>By {{c.instructor}}</span>@if(c.language){<span>{{c.language}}</span>}</div>@if(c.outcomes){<h2>What you'll learn</h2><ul>@for(outcome of c.outcomes.split('\\n'); track $index){@if(outcome.trim()){<li>{{outcome}}</li>}}</ul>}
+  <div><a class="back" routerLink="/">← Back to courses</a><div class="detail-art" [class]="'detail-art '+c.accent"><app-course-artwork [courseId]="c.id" [title]="c.title" [coverAssetId]="c.coverAssetId" /></div><span class="eyebrow purple">{{c.category}} @if(c.subcategory){ / {{c.subcategory}} } · {{c.level.toLowerCase()}}</span><h1>{{c.title}}</h1>@if(c.summary){<p class="lead">{{c.summary}}</p>}<p style="white-space:pre-line">{{c.description}}</p><div class="detail-badges"><span>★ {{c.rating.toFixed(1)}} rating</span><span>◷ {{c.durationHours}} hours</span><span>▤ {{c.lessons}} lessons</span><span>By {{c.instructor}}</span>@if(c.language){<span>{{c.language}}</span>}</div>@if(c.outcomes){<h2>What you'll learn</h2><ul>@for(outcome of c.outcomes.split('\\n'); track $index){@if(outcome.trim()){<li>{{outcome}}</li>}}</ul>}
     @if(c.audience){<h2>Who this course is for</h2><p style="white-space:pre-line">{{c.audience}}</p>}
     @if(c.prerequisites){<h2>Prerequisites</h2><p style="white-space:pre-line">{{c.prerequisites}}</p>}
     <h2>Course curriculum</h2>
@@ -40,7 +40,6 @@ export class CourseDetailComponent {
   readonly activePreview = signal<number | null>(null);
 
   togglePreview(id: number): void { this.activePreview.update(previous => previous === id ? null : id); }
-  coverUrl(assetId: string): string { return `${this.apiBase}/courses/${this.id()}/cover/${assetId}`; }
   previewUrl(lessonId: number): string { return `${this.apiBase}/courses/${this.id()}/preview/${lessonId}`; }
   readonly error = signal(''); readonly loading = signal(false);
   /** Load route-specific metadata and fetch protected curriculum once enrollment is available; discard stale view feedback. */
