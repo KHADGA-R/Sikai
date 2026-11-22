@@ -1,5 +1,7 @@
+import { LanguageService } from '../core/language.service';
 import { GRADE_GROUPS, matchesSchoolGrade } from '../core/grades';
-import { DatePipe } from '@angular/common';
+import { DatePipe, registerLocaleData } from '@angular/common';
+import localeNe from '@angular/common/locales/ne';
 import { ThemeIconComponent } from '../shared/theme-icon.component';
 import { COURSE_CATEGORIES, subcategoriesFor } from '../core/categories';
 import { Component, computed, effect, inject, signal } from '@angular/core';
@@ -13,6 +15,7 @@ import { ApiService } from '../core/api.service';
 import { LiveClassDiscovery } from '../core/live-classes';
 
 const COURSE_PAGE_SIZE = 8;
+registerLocaleData(localeNe);
 
 @Component({ standalone: true, imports: [FormsModule, RouterLink, DatePipe, CourseCardComponent, ThemeIconComponent], styles: [`
   .discovery-row { margin: 0 0 32px; }
@@ -33,40 +36,40 @@ const COURSE_PAGE_SIZE = 8;
   @media (min-width: 1101px) {
     .featured-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); }
   }
-`], template: `
+`], host: { '[attr.lang]': 'language.current()' }, template: `
 <section class="sikai-hero">
   <div class="hero-blob hero-blob-left" aria-hidden="true"></div>
   <div class="container landing-hero-grid">
     <div class="sikai-hero-copy">
-      <h1>Rooted in Nepal.<br><em>Open to the <span class="hero-underline">World.</span></em></h1>
-      <p>A world of culture, creativity, and possibility. Explore new skills, learn from passionate teachers, and carry your learning wherever life takes you.</p>
-      <div class="hero-buttons"><a class="button primary" href="#courses" (click)="openDiscovery($event)">Explore Courses <span aria-hidden="true">&rarr;</span></a><a class="button hero-outline" routerLink="/instructor">Become an Instructor</a></div>
-      <div class="hero-highlights"><span><app-theme-icon name="play" />Live &amp; On-demand</span><span><app-theme-icon name="people" />Expert Instructors</span><span><app-theme-icon name="star" />Learner Community</span></div>
+      <h1>{{ language.translate('Rooted in Nepal.') }}<br><em>{{ language.translate('Open to the') }} <span class="hero-underline">{{ language.translate('World.') }}</span></em></h1>
+      <p>{{ language.translate('A world of culture, creativity, and possibility. Explore new skills, learn from passionate teachers, and carry your learning wherever life takes you.') }}</p>
+      <div class="hero-buttons"><a class="button primary" href="#courses" (click)="openDiscovery($event)">{{ language.translate('Explore Courses') }} <span aria-hidden="true">&rarr;</span></a><a class="button hero-outline" routerLink="/instructor">{{ language.translate('Become an Instructor') }}</a></div>
+      <div class="hero-highlights"><span><app-theme-icon name="play" />{{ language.translate('Live & On-demand') }}</span><span><app-theme-icon name="people" />{{ language.translate('Expert Instructors') }}</span><span><app-theme-icon name="star" />{{ language.translate('Learner Community') }}</span></div>
     </div>
     <div class="landing-hero-art">
       <div class="art-blob" aria-hidden="true"></div>
-      <div class="hero-photo"><img src="assets/images/online-learning.png" alt="A learner enjoying an online class from her home in Nepal" width="1672" height="941" fetchpriority="high" /></div>
-      <div class="heritage-peek"><img src="assets/images/nepal-heritage.png" alt="Nepal's mountain and cultural heritage" width="180" height="180" /><span>From Nepal, with possibility.</span></div>
-      <div class="hero-topic-list"><a href="#courses" (click)="openDiscovery($event, 'Arts & Crafts')"><app-theme-icon name="palette" />Creative Skills</a><a href="#courses" (click)="openDiscovery($event, 'Skills & Training')"><app-theme-icon name="laptop" />Tech &amp; Career</a><a href="#courses" (click)="openDiscovery($event, 'Culture & Heritage')"><app-theme-icon name="temple" />Nepali Culture</a><a href="#courses" (click)="openDiscovery($event, 'Languages')"><app-theme-icon name="chat" />Languages</a></div>
+      <div class="hero-photo"><img src="assets/images/online-learning.png" [attr.alt]="language.translate('A learner enjoying an online class from her home in Nepal')" width="1672" height="941" fetchpriority="high" /></div>
+      <div class="heritage-peek"><img src="assets/images/nepal-heritage.png" [attr.alt]="language.translate(&quot;Nepal's mountain and cultural heritage&quot;)" width="180" height="180" /><span>{{ language.translate('From Nepal, with possibility.') }}</span></div>
+      <div class="hero-topic-list"><a href="#courses" (click)="openDiscovery($event, 'Arts & Crafts')"><app-theme-icon name="palette" />{{ language.translate('Creative Skills') }}</a><a href="#courses" (click)="openDiscovery($event, 'Skills & Training')"><app-theme-icon name="laptop" />{{ language.translate('Tech & Career') }}</a><a href="#courses" (click)="openDiscovery($event, 'Culture & Heritage')"><app-theme-icon name="temple" />{{ language.translate('Nepali Culture') }}</a><a href="#courses" (click)="openDiscovery($event, 'Languages')"><app-theme-icon name="chat" />{{ language.translate('Languages') }}</a></div>
       <svg class="hero-orbit" viewBox="0 0 600 350" fill="none" aria-hidden="true"><path d="M34 285C101 202 465 71 555 143C628 202 380 329 247 341" stroke="currentColor" stroke-width="10" stroke-linecap="round" /></svg>
       <span class="art-spark" aria-hidden="true">&#10035;</span>
     </div>
   </div>
 </section>
-<div class="container benefits-strip"><div class="benefits-grid"><div><app-theme-icon name="people" /><p><strong>Learn from Experts</strong><small>Passionate teachers &amp; mentors</small></p></div><div><app-theme-icon name="laptop" /><p><strong>Learn Anywhere</strong><small>At your pace, on any device</small></p></div><div><app-theme-icon name="growth" /><p><strong>Build Your Skills</strong><small>Turn curiosity into confidence</small></p></div><div><app-theme-icon name="globe" /><p><strong>Global Perspective</strong><small>Rooted in Nepal, connected worldwide</small></p></div></div></div>
-<section id="learning-categories" class="container cultural-section"><div class="cultural-heading"><div><span class="eyebrow purple">A LITTLE CURIOSITY GOES A LONG WAY</span><h2>Explore Learning Categories<span class="heading-spark" aria-hidden="true">&#10035;</span></h2></div></div><div class="culture-grid">@for(item of learningCategories; track item.name){<a href="#courses" class="culture-tile" [style.--category-background]="item.background" [style.--category-color]="item.color" (click)="openLearningCategory($event, item)"><app-theme-icon [name]="item.icon" /><span>{{item.name}}</span><p class="category-description">{{item.description}}</p><small>Explore courses <span aria-hidden="true">&rarr;</span></small></a>}</div><a class="all-courses-link" href="#courses" (click)="openDiscovery($event)">Find your next interest. Explore all courses <span aria-hidden="true">&rarr;</span></a></section>
+<div class="container benefits-strip"><div class="benefits-grid"><div><app-theme-icon name="people" /><p><strong>{{ language.translate('Learn from Experts') }}</strong><small>{{ language.translate('Passionate teachers & mentors') }}</small></p></div><div><app-theme-icon name="laptop" /><p><strong>{{ language.translate('Learn Anywhere') }}</strong><small>{{ language.translate('At your pace, on any device') }}</small></p></div><div><app-theme-icon name="growth" /><p><strong>{{ language.translate('Build Your Skills') }}</strong><small>{{ language.translate('Turn curiosity into confidence') }}</small></p></div><div><app-theme-icon name="globe" /><p><strong>{{ language.translate('Global Perspective') }}</strong><small>{{ language.translate('Rooted in Nepal, connected worldwide') }}</small></p></div></div></div>
+<section id="learning-categories" class="container cultural-section"><div class="cultural-heading"><div><span class="eyebrow purple">{{ language.translate('A LITTLE CURIOSITY GOES A LONG WAY') }}</span><h2>{{ language.translate('Explore Learning Categories') }}<span class="heading-spark" aria-hidden="true">&#10035;</span></h2></div></div><div class="culture-grid">@for(item of learningCategories; track item.name){<a href="#courses" class="culture-tile" [style.--category-background]="item.background" [style.--category-color]="item.color" (click)="openLearningCategory($event, item)"><app-theme-icon [name]="item.icon" /><span>{{ language.translate(item.name) }}</span><p class="category-description">{{ language.translate(item.description) }}</p><small>{{ language.translate('Explore courses') }} <span aria-hidden="true">&rarr;</span></small></a>}</div><a class="all-courses-link" href="#courses" (click)="openDiscovery($event)">{{ language.translate('Find your next interest. Explore all courses') }} <span aria-hidden="true">&rarr;</span></a></section>
 <section class="container grade-section" aria-labelledby="grade-heading">
-  <div class="section-heading"><div><span class="eyebrow purple">A LITTLE SUPPORT FOR EVERY SCHOOL YEAR</span><h2 id="grade-heading">Explore by Grade</h2><p>Find academic courses for your child's school year, from maths foundations to exam preparation.</p></div><button type="button" class="button outline" (click)="browseGrade('All')">All academic courses <span aria-hidden="true">&rarr;</span></button></div>
-  <div class="grade-groups">@for(group of gradeGroups; track group.name){<div class="grade-group"><h3>{{group.name}}</h3><p>{{group.description}}</p><div class="grade-options">@for(year of group.grades; track year){<button type="button" [attr.aria-pressed]="academicOnly() && grade() === year" (click)="browseGrade(year)"><small>Grade</small><strong>{{year}}</strong></button>}</div></div>}</div>
-  <p class="grade-help">Choose a grade to see available academic courses. Courses without a grade appear under All academic courses.</p>
+  <div class="section-heading"><div><span class="eyebrow purple">{{ language.translate('A LITTLE SUPPORT FOR EVERY SCHOOL YEAR') }}</span><h2 id="grade-heading">{{ language.translate('Explore by Grade') }}</h2><p>{{ gradeDescription() }}</p></div><button type="button" class="button outline" (click)="browseGrade('All')">{{ language.translate('All academic courses') }} <span aria-hidden="true">&rarr;</span></button></div>
+  <div class="grade-groups">@for(group of gradeGroups; track group.name){<div class="grade-group"><h3>{{ language.translate(group.name) }}</h3><p>{{ language.translate(group.description) }}</p><div class="grade-options">@for(year of group.grades; track year){<button type="button" [attr.aria-pressed]="academicOnly() && grade() === year" (click)="browseGrade(year)"><small>{{ language.translate('Grade') }}</small><strong>{{year}}</strong></button>}</div></div>}</div>
+  <p class="grade-help">{{ language.translate('Choose a grade to see available academic courses. Courses without a grade appear under All academic courses.') }}</p>
 </section>
-<section id="courses" class="container section"><div class="section-heading"><div><span class="eyebrow purple">KEEP YOUR CURIOSITY ALIVE</span><h2 id="discovery-heading" tabindex="-1">Discover Courses</h2><p>Discover your next skill. Make it part of your story.</p></div><span class="result-count">{{ filtered().length }} courses</span></div>
-<div class="filters"><select [ngModel]="category()" (ngModelChange)="chooseInterest($event)" aria-label="Filter category"><option value="All">All categories</option>@for(c of interests; track c.name){<option [value]="c.name">{{c.name}}</option>}</select><select [ngModel]="subcategory()" (ngModelChange)="subcategory.set($event)" [disabled]="category() === 'All'" aria-label="Filter subcategory"><option value="All">All subcategories</option>@for(s of availableSubcategories(); track s){<option [value]="s">{{s}}</option>}</select><select [ngModel]="level()" (ngModelChange)="level.set($event)" aria-label="Filter level"><option value="All">All levels</option><option value="BEGINNER">Beginner</option><option value="INTERMEDIATE">Intermediate</option><option value="ADVANCED">Advanced</option></select><select [ngModel]="price()" (ngModelChange)="price.set($event)" aria-label="Filter price"><option value="All">All prices</option><option value="Free">Free</option><option value="Paid">Paid</option></select></div>
-@if(academicOnly()) {<div class="grade-filter-summary" role="status"><span>Showing <strong>{{grade() === 'All' ? 'all academic courses' : 'Grade ' + grade() + ' academic courses'}}</strong> &middot; {{filtered().length}} available</span><button type="button" (click)="reset()">Clear grade filter <span aria-hidden="true">&times;</span></button></div>}
+<section id="courses" class="container section"><div class="section-heading"><div><span class="eyebrow purple">{{ language.translate('KEEP YOUR CURIOSITY ALIVE') }}</span><h2 id="discovery-heading" tabindex="-1">{{ language.translate('Discover Courses') }}</h2><p>{{ language.translate('Discover your next skill. Make it part of your story.') }}</p></div><span class="result-count">{{ filtered().length }} {{ language.translate('courses') }}</span></div>
+<div class="filters"><select [ngModel]="category()" (ngModelChange)="chooseInterest($event)" [attr.aria-label]="language.translate('Filter category')"><option value="All">{{ language.translate('All categories') }}</option>@for(c of interests; track c.name){<option [value]="c.name">{{ language.translate(c.name) }}</option>}</select><select [ngModel]="subcategory()" (ngModelChange)="subcategory.set($event)" [disabled]="category() === 'All'" [attr.aria-label]="language.translate('Filter subcategory')"><option value="All">{{ language.translate('All subcategories') }}</option>@for(s of availableSubcategories(); track s){<option [value]="s">{{ language.translate(s) }}</option>}</select><select [ngModel]="level()" (ngModelChange)="level.set($event)" [attr.aria-label]="language.translate('Filter level')"><option value="All">{{ language.translate('All levels') }}</option><option value="BEGINNER">{{ language.translate('Beginner') }}</option><option value="INTERMEDIATE">{{ language.translate('Intermediate') }}</option><option value="ADVANCED">{{ language.translate('Advanced') }}</option></select><select [ngModel]="price()" (ngModelChange)="price.set($event)" [attr.aria-label]="language.translate('Filter price')"><option value="All">{{ language.translate('All prices') }}</option><option value="Free">{{ language.translate('Free') }}</option><option value="Paid">{{ language.translate('Paid') }}</option></select></div>
+@if(academicOnly()) {<div class="grade-filter-summary" role="status"><span>{{ language.translate(grade() === 'All' ? 'Showing all academic courses · {count} available' : 'Showing Grade {grade} academic courses · {count} available', { grade: grade(), count: filtered().length }) }}</span><button type="button" (click)="reset()">{{ language.translate('Clear grade filter') }} <span aria-hidden="true">&times;</span></button></div>}
 @if (!hasFilters()) {
   @if (featuredCourses().length) {
     <section class="discovery-row" aria-labelledby="featured-courses-heading">
-      <h3 id="featured-courses-heading">{{ featuredCoursesHeading() }}</h3>
+      <h3 id="featured-courses-heading">{{ language.translate(featuredCoursesHeading()) }}</h3>
       <div class="course-grid featured-grid">
         @for (course of featuredCourses(); track course.id) {
           <app-course-card [course]="course" [wished]="store.isWished(course.id)" (wishlistClick)="store.toggleWishlist($event)" />
@@ -77,56 +80,68 @@ const COURSE_PAGE_SIZE = 8;
   @if (liveDiscoveryLoaded()) {
     <section class="discovery-row live-discovery" aria-labelledby="featured-live-heading">
       <div class="live-discovery-header">
-        <h3 id="featured-live-heading">Upcoming Live Classes</h3>
-        <a routerLink="/live-classes">View all live classes</a>
+        <h3 id="featured-live-heading">{{ language.translate('Upcoming Live Classes') }}</h3>
+        <a routerLink="/live-classes">{{ language.translate('View all live classes') }}</a>
       </div>
       @if (liveDiscovery().length) {
         <div class="course-grid featured-grid">
           @for (session of liveDiscovery(); track session.slotId) {
             <article class="panel live-discovery-card">
               <time [attr.datetime]="session.start | date:'yyyy-MM-ddTHH:mm:ssZZZZZ'">
-                <span>{{ session.start | date:'EEE, MMM d' }}</span>
-                <strong>{{ session.start | date:'h:mm a z' }}</strong>
+                <span>{{ session.start | date:'EEE, MMM d':undefined:language.current() }}</span>
+                <strong>{{ session.start | date:'h:mm a z':undefined:language.current() }}</strong>
               </time>
               <h4>{{ session.subject }}</h4>
-              <p>With {{ session.teacherName }} &middot; {{ (session.end - session.start) / 60000 }} min</p>
+              <p>{{ language.translate('With {teacher} · {minutes} min', { teacher: session.teacherName, minutes: (session.end - session.start) / 60000 }) }}</p>
               <a class="button outline" routerLink="/live-classes"
                 [queryParams]="{teacher: session.teacherId, slot: session.slotId}"
-                [attr.aria-label]="'View class with ' + session.teacherName + ' at ' + (session.start | date:'EEE, MMM d, h:mm a z')">View class</a>
+                [attr.aria-label]="language.translate('View class with {teacher} at {time}', { teacher: session.teacherName, time: (session.start | date:'EEE, MMM d, h:mm a z':undefined:language.current()) ?? '' })">{{ language.translate('View class') }}</a>
             </article>
           }
         </div>
       } @else {
-        <p class="live-discovery-empty">No live class times are available right now.</p>
+        <p class="live-discovery-empty">{{ language.translate('No live class times are available right now.') }}</p>
       }
     </section>
   }
 }
 <section [attr.aria-labelledby]="!hasFilters() && mainCourses().length ? 'all-courses-heading' : null">
   @if (!hasFilters() && mainCourses().length) {
-    <h3 id="all-courses-heading" class="all-courses-heading">All Courses</h3>
+    <h3 id="all-courses-heading" class="all-courses-heading">{{ language.translate('All Courses') }}</h3>
   }
   <div class="course-grid" id="catalog-course-grid">
     @for (course of visibleCourses(); track course.id) {
       <app-course-card [course]="course" [wished]="store.isWished(course.id)" (wishlistClick)="store.toggleWishlist($event)" />
     } @empty {
       @if (!filtered().length) {
-        <div class="empty full"><div class="empty-icon">🔎</div><h3>{{academicOnly() ? 'No academic courses available' + (grade() === 'All' ? ' yet' : ' for Grade ' + grade() + ' yet') : 'No matching courses'}}</h3><p>{{academicOnly() ? 'Try all academic courses or clear the filters to explore other learning opportunities.' : 'Courses for this topic may not be available yet. Try another category or explore all courses.'}}</p>@if(academicOnly() && grade() !== 'All'){<button type="button" class="button primary" (click)="browseGrade('All')">All academic courses</button> }<button class="button outline" (click)="reset()">Clear filters</button></div>
+        <div class="empty full"><div class="empty-icon">🔎</div><h3>{{ emptyHeading() }}</h3><p>{{language.translate(academicOnly() ? 'Try all academic courses or clear the filters to explore other learning opportunities.' : 'Courses for this topic may not be available yet. Try another category or explore all courses.')}}</p>@if(academicOnly() && grade() !== 'All'){<button type="button" class="button primary" (click)="browseGrade('All')">{{ language.translate('All academic courses') }}</button> }<button class="button outline" (click)="reset()">{{ language.translate('Clear filters') }}</button></div>
       }
     }
   </div>
   @if (!hasFilters() && visibleCourses().length < mainCourses().length) {
     <div class="catalog-more">
-      <button type="button" class="button outline" aria-controls="catalog-course-grid" (click)="loadMore()">Load more courses</button>
+      <button type="button" class="button outline" aria-controls="catalog-course-grid" (click)="loadMore()">{{ language.translate('Load more courses') }}</button>
     </div>
   }
 </section>
-</section><section class="container cta-banner"><div><span class="eyebrow">FOR TEACHERS, CREATORS & CULTURAL KEEPERS</span><h2>Share what you know. Inspire what comes next.</h2><p>Bring your knowledge to Sikai. Create courses, share stories, and help others grow.</p></div><a routerLink="/instructor" class="button light">Become an Instructor &rarr;</a></section>` })
+</section><section class="container cta-banner"><div><span class="eyebrow">{{ language.translate('FOR TEACHERS, CREATORS & CULTURAL KEEPERS') }}</span><h2>{{ language.translate('Share what you know. Inspire what comes next.') }}</h2><p>{{ language.translate('Bring your knowledge to Sikai. Create courses, share stories, and help others grow.') }}</p></div><a routerLink="/instructor" class="button light">{{ language.translate('Become an Instructor') }} &rarr;</a></section>` })
 export class CatalogComponent {
+  readonly language = inject(LanguageService);
+
   readonly store = inject(LearnHubStore);
   readonly gradeGroups = GRADE_GROUPS;
+  readonly gradeDescription = computed(() => this.language.translate(
+    "Find academic courses for your child's school year, from maths foundations to exam preparation."
+  ));
   readonly grade = signal<number | 'All'>('All');
   readonly academicOnly = signal(false);
+  readonly emptyHeading = computed(() => {
+    if (!this.academicOnly()) return this.language.translate('No matching courses');
+    const grade = this.grade();
+    return grade === 'All'
+      ? this.language.translate('No academic courses available yet')
+      : this.language.translate('No academic courses available for Grade {grade} yet', { grade });
+  });
   /** Reset other filters, enable academic discovery for the chosen grade and move focus to the catalog heading. */
   browseGrade(grade: number | 'All'): void {
     this.reset();

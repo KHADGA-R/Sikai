@@ -1,3 +1,4 @@
+import { LanguageService } from '../core/language.service';
 import { Component, inject } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { AuthService } from '../core/auth.service';
@@ -8,50 +9,50 @@ import { BrandLogoComponent } from './brand-logo.component';
   standalone: true,
   imports: [RouterLink, BrandLogoComponent],
   template: `
-    <footer class="sikai-footer">
-      <nav class="container footer-directory" aria-label="Footer navigation">
+    <footer class="sikai-footer" [attr.lang]="language.current()">
+      <nav class="container footer-directory" [attr.aria-label]="language.translate('Footer navigation')">
         <div>
-          <h2>About Sikai</h2>
+          <h2>{{ language.translate('About Sikai') }}</h2>
           <ul>
-            <li><a routerLink="/about">About Us</a></li>
-            <li><a routerLink="/careers">Careers</a></li>
-            <li><a routerLink="/contact">Contact Us</a></li>
-            <li><a routerLink="/blog">Blog</a></li>
+            <li><a routerLink="/about">{{ language.translate('About Us') }}</a></li>
+            <li><a routerLink="/careers">{{ language.translate('Careers') }}</a></li>
+            <li><a routerLink="/contact">{{ language.translate('Contact Us') }}</a></li>
+            <li><a routerLink="/blog">{{ language.translate('Blog') }}</a></li>
           </ul>
         </div>
         <div>
-          <h2>Explore Sikai</h2>
+          <h2>{{ language.translate('Explore Sikai') }}</h2>
           <ul>
-            <li><a routerLink="/" fragment="courses">Discover Courses</a></li>
-            <li><a routerLink="/" fragment="learning-categories">Learning Categories</a></li>
-            <li><a routerLink="/" fragment="grade-heading">Explore by Grade</a></li>
-            <li><a routerLink="/live-classes">Live Classes</a></li>
-            <li><a routerLink="/community">Community</a></li>
-            <li><a routerLink="/get-the-app">Get the app</a></li>
+            <li><a routerLink="/" fragment="courses">{{ language.translate('Discover Courses') }}</a></li>
+            <li><a routerLink="/" fragment="learning-categories">{{ language.translate('Learning Categories') }}</a></li>
+            <li><a routerLink="/" fragment="grade-heading">{{ language.translate('Explore by Grade') }}</a></li>
+            <li><a routerLink="/live-classes">{{ language.translate('Live Classes') }}</a></li>
+            <li><a routerLink="/community">{{ language.translate('Community') }}</a></li>
+            <li><a routerLink="/get-the-app">{{ language.translate('Get the app') }}</a></li>
           </ul>
         </div>
         <div>
-          <h2>Teach on Sikai</h2>
+          <h2>{{ language.translate('Teach on Sikai') }}</h2>
           <ul>
             @if (auth.isInstructor()) {
-              <li><a routerLink="/instructor">Instructor Dashboard</a></li>
-              <li><a routerLink="/instructor/courses">Manage Courses</a></li>
+              <li><a routerLink="/instructor">{{ language.translate('Instructor Dashboard') }}</a></li>
+              <li><a routerLink="/instructor/courses">{{ language.translate('Manage Courses') }}</a></li>
             } @else {
-              <li><a routerLink="/instructor">Become an Instructor</a></li>
+              <li><a routerLink="/instructor">{{ language.translate('Become an Instructor') }}</a></li>
             }
           </ul>
         </div>
         <div>
-          <h2>Account &amp; Support</h2>
+          <h2>{{ language.translate('Account & Support') }}</h2>
           <ul>
-            <li><a routerLink="/help">Help and Support</a></li>
+            <li><a routerLink="/help">{{ language.translate('Help and Support') }}</a></li>
             @if (!auth.isInstructor()) {
               @if (auth.isLoggedIn()) {
-                <li><a routerLink="/my-learning">My Learning</a></li>
-                <li><a routerLink="/wishlist">Wishlist</a></li>
+                <li><a routerLink="/my-learning">{{ language.translate('My Learning') }}</a></li>
+                <li><a routerLink="/wishlist">{{ language.translate('Wishlist') }}</a></li>
               } @else {
-                <li><a routerLink="/login">Log in</a></li>
-                <li><a routerLink="/register">Create an Account</a></li>
+                <li><a routerLink="/login">{{ language.translate('Log in') }}</a></li>
+                <li><a routerLink="/register">{{ language.translate('Create an Account') }}</a></li>
               }
             }
           </ul>
@@ -59,8 +60,8 @@ import { BrandLogoComponent } from './brand-logo.component';
       </nav>
       <div class="footer-base">
         <div class="container footer-base-content">
-          <a class="footer-brand" routerLink="/" aria-label="Sikai home"><app-brand-logo /></a>
-          <p>Rooted in Nepal. Open to the World.</p>
+          <a class="footer-brand" routerLink="/" [attr.aria-label]="language.translate('Sikai home')"><app-brand-logo /></a>
+          <p>{{ language.translate('Rooted in Nepal. Open to the World.') }}</p>
           <small>&copy; {{ year }} Sikai</small>
         </div>
       </div>
@@ -100,6 +101,8 @@ import { BrandLogoComponent } from './brand-logo.component';
   `]
 })
 export class SiteFooterComponent {
+  readonly language = inject(LanguageService);
+
   readonly auth = inject(AuthService);
   readonly year = new Date().getFullYear();
 }
