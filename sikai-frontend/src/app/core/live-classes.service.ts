@@ -58,7 +58,7 @@ export class LiveClassesService implements OnDestroy {
   /** Save the authenticated instructor profile; the backend determines its owner and public name. */
   saveTeacher(input: Pick<Teacher, 'subject' | 'bio' | 'languages' | 'photoUrl'>): Promise<void> { return this.change('PUT', '/teacher', input); }
   /** Publish availability using an epoch-millisecond start time and an allowed duration in minutes. */
-  addSlot(start: number, minutes: number, meetingUrl: string, capacity = 1): Promise<void> { return this.change('POST', '/slots', { start, minutes, meetingUrl, capacity }); }
+  addSlot(start: number, minutes: number, meetingUrl: string, capacity = 1, sikaiVideo = false): Promise<void> { return this.change('POST', '/slots', { start, minutes, meetingUrl, capacity, sikaiVideo }); }
   joinSlot(id: string): Promise<{ url: string }> { return this.api.request('POST', `/live-classes/slots/${id}/join`); }
   /** Ask the backend to withdraw owned availability; active bookings must be cancelled first. */
   removeSlot(id: string): Promise<void> { return this.change('DELETE', `/slots/${id}`); }

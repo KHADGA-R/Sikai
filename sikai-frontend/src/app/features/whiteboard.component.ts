@@ -2,9 +2,11 @@ import { Component, DestroyRef, computed, inject, signal } from '@angular/core';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { ApiError, ApiService } from '../core/api.service';
 import { AuthService } from '../core/auth.service';
-import { safeMeetingUrl } from '../core/live-classes';
+import { isCurrentLiveSlot, latestCompletedSlotId, LIVE_CLASS_JOIN_LEAD_MS, safeMeetingUrl } from '../core/live-classes';
+import { LiveClassesService } from '../core/live-classes.service';
 import { NotePatch, StickyNote, WhiteboardNoteComponent } from './whiteboard-note.component';
 import { ThemeIconComponent } from '../shared/theme-icon.component';
+import { ClassroomVideoComponent } from './classroom-video.component';
 
 type Shape = 'line' | 'rectangle' | 'ellipse' | 'circle' | 'arrow';
 type Tool = 'pen' | 'highlighter' | 'text' | Shape;
@@ -19,7 +21,9 @@ interface Board {
   instructor: boolean;
   instructorId: string;
   meetingUrl: string;
+  start: number;
   end: number;
+  sikaiVideo: boolean;
   slides: Slide[];
   marks: (Omit<Mark, 'points'> & { points: string })[];
   erasures?: { markId: string; gestureId: string; points: string; radius?: number }[];
@@ -28,14 +32,17 @@ interface Board {
 
 @Component({
   standalone: true,
-  imports: [RouterLink, WhiteboardNoteComponent, ThemeIconComponent],
+  imports: [RouterLink, WhiteboardNoteComponent, ThemeIconComponent, ClassroomVideoComponent],
   templateUrl: './whiteboard.component.html',
   styleUrl: './whiteboard.component.css',
 })
 export class WhiteboardComponent {
   private readonly api = inject(ApiService);
   private readonly auth = inject(AuthService);
-  private readonly slotId = inject(ActivatedRoute).snapshot.paramMap.get('slotId')!;
+  private readonly live = inject(LiveClassesService);
+  private readonly route = inject(ActivatedRoute);
+  readonly slotId = this.route.snapshot.paramMap.get('slotId')!;
+  readonly autoJoinVideo = this.route.snapshot.queryParamMap.get('video') === 'join';
   private readonly resource = '/live-classes/slots/' + encodeURIComponent(this.slotId) + '/whiteboard';
   readonly blank: Slide = { id: 'blank', title: 'Whiteboard', hasImage: false };
   readonly selected = signal<Slide>(this.blank);
@@ -112,7 +119,18 @@ export class WhiteboardComponent {
   });
   readonly meetingLink = computed(() => {
     const board = this.board();
-    return board && this.now() < board.end && safeMeetingUrl(board.meetingUrl) ? board.meetingUrl : '';
+    const now = this.now();
+    return board && now < board.end && (board.instructor || now >= board.start - LIVE_CLASS_JOIN_LEAD_MS) &&
+      safeMeetingUrl(board.meetingUrl) ? board.meetingUrl : '';
+  });
+  readonly videoOpen = computed(() => {
+    const board = this.board(), now = this.now();
+    return !!board?.sikaiVideo && now >= board.start - LIVE_CLASS_JOIN_LEAD_MS && now < board.end;
+  });
+  readonly whiteboardOpen = computed(() => {
+    const room = this.board();
+    const now = this.now();
+    return !!room && (isCurrentLiveSlot(room, now) || latestCompletedSlotId(this.live.state(), now) === this.slotId);
   });
 
   constructor() {

@@ -5,7 +5,7 @@ import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { AuthService } from '../core/auth.service';
 import { CATEGORY_NAMES } from '../core/categories';
 import { LiveClassesService } from '../core/live-classes.service';
-import { Booking, LiveSlot, safeMeetingUrl } from '../core/live-classes';
+import { Booking, isCurrentLiveSlot, latestCompletedSlotId, LIVE_CLASS_JOIN_LEAD_MS, LiveSlot, safeMeetingUrl } from '../core/live-classes';
 
 @Component({ standalone: true, imports: [FormsModule, RouterLink, NgTemplateOutlet], templateUrl: './live-classes.component.html', styleUrl: './live-classes.component.css' })
 export class LiveClassesComponent implements OnDestroy {
@@ -18,6 +18,7 @@ export class LiveClassesComponent implements OnDestroy {
   readonly now = signal(Date.now()); private readonly timer = setInterval(() => { this.now.set(Date.now()); }, 1000);
   readonly busy = signal(false); readonly error = signal(''); readonly notice = signal(''); readonly selectedSlot = signal(''); readonly rescheduling = signal('');
   goals = ''; start = ''; minutes = 45; capacity: number | null = 1; meetingUrl = ''; bio = ''; languages = ''; teachingSubject = 'Culture & Heritage';
+  sikaiVideo = false;
   photoUrl = '';
   readonly editingProfile = signal(false);
   readonly photoBusy = signal(false);
@@ -38,8 +39,17 @@ export class LiveClassesComponent implements OnDestroy {
   });
 
   canJoin(slot: LiveSlot): boolean {
-    return !slot.closed && this.now() < slot.end &&
-      (!!this.externalMeeting(slot) || (!slot.meetingUrl && !!slot.classroomAvailable && this.now() >= slot.start - 5 * 60_000));
+    const now = this.now();
+    if (slot.closed || now >= slot.end) return false;
+    const inJoinWindow = now >= slot.start - LIVE_CLASS_JOIN_LEAD_MS;
+    if (this.externalMeeting(slot)) return inJoinWindow || slot.teacherId === this.myTeacher()?.id;
+    return !slot.meetingUrl && !!slot.classroomAvailable && inJoinWindow;
+  }
+
+  private readonly latestWhiteboard = computed(() => latestCompletedSlotId(this.live.state(), this.now()));
+
+  showWhiteboard(slot: LiveSlot): boolean {
+    return isCurrentLiveSlot(slot, this.now()) || slot.id === this.latestWhiteboard();
   }
 
   externalMeeting(slot: LiveSlot): string {
@@ -48,10 +58,14 @@ export class LiveClassesComponent implements OnDestroy {
 
   openBoardAfterMeetingClick(event: MouseEvent, slot: LiveSlot): void {
     if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
-    void this.router.navigate(['/live-classes', slot.id, 'whiteboard']);
+    if (isCurrentLiveSlot(slot, this.now())) void this.router.navigate(['/live-classes', slot.id, 'whiteboard']);
   }
 
   async join(slot: LiveSlot): Promise<void> {
+    if (slot.sikaiVideo) {
+      await this.router.navigate(['/live-classes', slot.id, 'whiteboard'], { queryParams: { video: 'join' } });
+      return;
+    }
     await this.action(async () => {
       const { url } = await this.live.joinSlot(slot.id);
       window.location.assign(url);
@@ -183,9 +197,10 @@ export class LiveClassesComponent implements OnDestroy {
       if (capacity === null || !Number.isInteger(capacity) || capacity < 1 || capacity > 50) {
         throw new Error('Enter a whole number between 1 and 50 for student seats.');
       }
-      await this.live.addSlot(new Date(this.start).getTime(), this.minutes, this.meetingUrl, capacity);
+      await this.live.addSlot(new Date(this.start).getTime(), this.minutes, this.sikaiVideo ? '' : this.meetingUrl, capacity, this.sikaiVideo);
       this.start = '';
       this.meetingUrl = '';
+      this.sikaiVideo = false;
       this.capacity = 1;
     }, 'Availability published. Students can now book this time.');
   }

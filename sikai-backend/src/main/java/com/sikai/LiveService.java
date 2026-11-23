@@ -15,7 +15,7 @@ public class LiveService {
     /** Public teaching metadata; ownership and the teacher name are derived from the principal. */
     public record TeacherInput(@NotBlank String subject,@NotBlank @Size(max=1000) String bio,@NotBlank @Size(max=120) String languages,@Size(max=300000) String photoUrl) {}
     /** Start is epoch milliseconds; duration is one of the supported minute values. */
-    public record SlotInput(long start,int minutes,@NotNull @Size(max=2048) String meetingUrl,@Min(1) @Max(50) Integer capacity) {}
+    public record SlotInput(long start,int minutes,@NotNull @Size(max=2048) String meetingUrl,@Min(1) @Max(50) Integer capacity,Boolean sikaiVideo) {}
     /** Optional replacing identifies a booking to reschedule atomically; timezone is an IANA zone ID. */
     public record BookInput(@NotBlank String slotId,@NotNull @Size(max=1000) String goals,@NotBlank @Size(max=100) String timezone,String replacing) {}
     static final String TEACHERS="SELECT t.id,t.owner_id AS \"ownerId\",u.name,t.subject,t.bio,t.languages,t.photo_url AS \"photoUrl\" FROM teacher t JOIN app_user u ON u.id=t.owner_id";
@@ -25,9 +25,10 @@ public class LiveService {
     final Db db; private final CatalogService catalog;
     private final NotificationService notifications;
     private final ClassroomGateway classroom;
+    private final VideoRoomGateway video;
 
     /** Share the database and catalog authorization rules with transactional live scheduling. */
-    public LiveService(Db db,CatalogService catalog,NotificationService notifications,ClassroomGateway classroom) { this.db=db; this.catalog=catalog; this.notifications=notifications; this.classroom=classroom; }
+    public LiveService(Db db,CatalogService catalog,NotificationService notifications,ClassroomGateway classroom,VideoRoomGateway video) { this.db=db; this.catalog=catalog; this.notifications=notifications; this.classroom=classroom; this.video=video; }
 
     /** List teacher profiles with names derived from their owning user accounts. */
     public Object teachers() { return db.list(TEACHERS+" ORDER BY u.name"); }
@@ -85,7 +86,10 @@ public class LiveService {
         Db.require(!db.exists("SELECT id FROM live_slot WHERE teacher_id=? AND closed=FALSE AND start_at<? AND end_at>?",tid,end,input.start),CONFLICT,"Availability overlaps another slot");
         Db.require(!busy(user.id(),input.start,end,"",""),CONFLICT,"You already have a booking at this time");
         int capacity=input.capacity==null?1:input.capacity;
-        String id=Db.id(); db.update("INSERT INTO live_slot(id,teacher_id,start_at,end_at,meeting_url,capacity) VALUES (?,?,?,?,?,?)",id,tid,input.start,end,input.meetingUrl.trim(),capacity);
+        boolean sikaiVideo=Boolean.TRUE.equals(input.sikaiVideo);
+        Db.require(!sikaiVideo || video.configured(),SERVICE_UNAVAILABLE,"Sikai Video is not configured");
+        Db.require(!sikaiVideo || input.meetingUrl.isBlank(),BAD_REQUEST,"Choose Sikai Video or a meeting link");
+        String id=Db.id(); db.update("INSERT INTO live_slot(id,teacher_id,start_at,end_at,meeting_url,capacity,sikai_video) VALUES (?,?,?,?,?,?,?)",id,tid,input.start,end,input.meetingUrl.trim(),capacity,sikaiVideo);
         return slotDetails(id);
     }
 
@@ -99,7 +103,9 @@ public class LiveService {
     /** Serialize and authorize a meeting-link change before persisting a validated HTTPS URL. */
     @Transactional public void meeting(String id,String url,AuthService.User user) {
         lock(); slotOwner(id,user); safeUrl(url);
-        String before=db.one("SELECT meeting_url FROM live_slot WHERE id=?",id).get("meeting_url").toString();
+        var slot=db.one("SELECT meeting_url,sikai_video FROM live_slot WHERE id=?",id);
+        Db.require(!Boolean.TRUE.equals(slot.get("sikai_video")),CONFLICT,"This class uses Sikai Video");
+        String before=slot.get("meeting_url").toString();
         db.update("UPDATE live_slot SET meeting_url=?,board_revision=board_revision+1 WHERE id=?",url.trim(),id);
         if(!before.equals(url.trim())) for(var booking:db.list("SELECT id FROM booking WHERE slot_id=? AND status='confirmed'",id)) notifications.liveEvent(booking.get("id").toString(),"meeting_updated",Db.id(),user.id());
     }
@@ -152,22 +158,39 @@ public class LiveService {
 
     private Map<String,Object> slotDetails(String id) {
         var slot=db.one(SLOTS+" WHERE s.id=?",id);
-        String url=db.one("SELECT meeting_url FROM live_slot WHERE id=?",id).get("meeting_url").toString();
-        slot.put("meetingUrl",url);
-        slot.put("classroomAvailable",!url.isBlank() || classroom.configured());
+        var details=db.one("SELECT meeting_url,sikai_video FROM live_slot WHERE id=?",id);
+        slot.put("meetingUrl",details.get("meeting_url"));
+        slot.put("sikaiVideo",details.get("sikai_video"));
+        setClassroomAvailability(slot);
         return slot;
     }
 
     public String join(String slotId,AuthService.User user) {
+        var slot=joinableSlot(slotId,user);
+        boolean instructor=user.id().equals(slot.get("owner_id"));
+        long now=System.currentTimeMillis();
+        long end=((Number)slot.get("end_at")).longValue();
+        String url=slot.get("meeting_url").toString();
+        Db.require(!Boolean.TRUE.equals(slot.get("sikai_video")),CONFLICT,"Join this class from the Sikai classroom");
+        return url.isBlank()?classroom.join(slotId,slot.get("subject").toString(),user,instructor,end-now):url;
+    }
+
+    public Object videoCredentials(String slotId,AuthService.User user) {
+        var slot=joinableSlot(slotId,user);
+        Db.require(Boolean.TRUE.equals(slot.get("sikai_video")),CONFLICT,"This class does not use Sikai Video");
+        return video.credentials(slotId,user,user.id().equals(slot.get("owner_id")),((Number)slot.get("end_at")).longValue());
+    }
+
+    private Map<String,Object> joinableSlot(String slotId,AuthService.User user) {
         var slot=db.one("SELECT s.*,t.owner_id,t.subject FROM live_slot s JOIN teacher t ON t.id=s.teacher_id WHERE s.id=?",slotId);
         boolean instructor=user.id().equals(slot.get("owner_id"));
         Db.require(instructor || db.exists("SELECT id FROM booking WHERE slot_id=? AND student_id=? AND status='confirmed'",slotId,user.id()),FORBIDDEN,"A confirmed booking is required");
         long now=System.currentTimeMillis();
         long start=((Number)slot.get("start_at")).longValue(),end=((Number)slot.get("end_at")).longValue();
-        String url=slot.get("meeting_url").toString();
         Db.require(!Boolean.TRUE.equals(slot.get("closed")) && now<end,CONFLICT,"This classroom is closed");
-        Db.require(!url.isBlank() || now>=start-Duration.ofMinutes(5).toMillis(),CONFLICT,"The classroom opens five minutes before the scheduled start");
-        return url.isBlank()?classroom.join(slotId,slot.get("subject").toString(),user,instructor,end-now):url;
+        boolean instructorHasLink=instructor && !slot.get("meeting_url").toString().isBlank();
+        Db.require(instructorHasLink || now>=start-Duration.ofMinutes(5).toMillis(),CONFLICT,"The classroom opens five minutes before the scheduled start");
+        return slot;
     }
 
     /** Serialize cancellation and permit it only for a participant's upcoming confirmed booking. */
@@ -202,9 +225,14 @@ public class LiveService {
     /** List teaching availability and meeting links only for the current instructor owner. */
     public Object ownSlots(AuthService.User user) {
         catalog.instructor(user);
-        var slots=db.list("SELECT s.id,s.teacher_id AS \"teacherId\",s.start_at AS start,s.end_at AS \"end\",s.meeting_url AS \"meetingUrl\",s.closed,s.capacity,s.capacity-"+BOOKED+" AS \"seatsRemaining\" FROM live_slot s JOIN teacher t ON t.id=s.teacher_id WHERE t.owner_id=? ORDER BY s.start_at",user.id());
-        for(var slot:slots) slot.put("classroomAvailable",!slot.get("meetingUrl").toString().isBlank() || classroom.configured());
+        var slots=db.list("SELECT s.id,s.teacher_id AS \"teacherId\",s.start_at AS start,s.end_at AS \"end\",s.meeting_url AS \"meetingUrl\",s.sikai_video AS \"sikaiVideo\",s.closed,s.capacity,s.capacity-"+BOOKED+" AS \"seatsRemaining\" FROM live_slot s JOIN teacher t ON t.id=s.teacher_id WHERE t.owner_id=? ORDER BY s.start_at",user.id());
+        slots.forEach(this::setClassroomAvailability);
         return slots;
+    }
+
+    private void setClassroomAvailability(Map<String,Object> slot) {
+        slot.put("classroomAvailable",Boolean.TRUE.equals(slot.get("sikaiVideo")) ? video.configured()
+            : !slot.get("meetingUrl").toString().isBlank() || classroom.configured());
     }
 
     /** Require teaching privileges and verify the principal owns the slot's teacher profile. */

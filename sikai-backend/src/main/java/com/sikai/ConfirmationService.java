@@ -28,7 +28,7 @@ public class ConfirmationService {
         var student=db.one("SELECT name,email FROM app_user WHERE id=?",booking.get("student_id"));
         var message=new SimpleMailMessage(); message.setFrom(from); message.setTo((String)student.get("email")); message.setSubject("Sikai live-class confirmation");
         String start=startTime(booking);
-        message.setText("Hello "+student.get("name")+",\nYour class with "+booking.get("teacher_name")+" is confirmed.\nSubject: "+booking.get("subject")+"\nStarts: "+start+"\nMeeting: "+booking.get("meeting_url")+"\nGoals: "+booking.get("goals")+"\nBooking: "+id);
+        message.setText("Hello "+student.get("name")+",\nYour class with "+booking.get("teacher_name")+" is confirmed.\nSubject: "+booking.get("subject")+"\nStarts: "+start+"\n"+joinDetails(booking)+"\nGoals: "+booking.get("goals")+"\nBooking: "+id);
         try { mail.send(message); return Map.of("sent",true); }
         catch(org.springframework.mail.MailException e) { LoggerFactory.getLogger(getClass()).warn("Confirmation delivery failed for booking {}",id); return Map.of("sent",false,"message","Email delivery failed; booking is saved"); }
     }
@@ -38,14 +38,17 @@ public class ConfirmationService {
         message.setFrom(from);
         message.setTo((String) booking.get("email"));
         message.setSubject("Sikai live class: " + label + " reminder");
-        String meeting = (String) booking.get("meeting_url");
         message.setText("Hello " + booking.get("student_name") + ",\n\n"
             + "Your live class with " + booking.get("teacher_name") + " is coming up.\n"
             + "Subject: " + booking.get("subject") + "\n"
             + "Starts: " + startTime(booking) + "\n"
-            + (meeting.isBlank() ? "Check Live Classes > My Bookings for the meeting link."
-                : "Meeting: " + meeting));
+            + joinDetails(booking));
         mail.send(message);
+    }
+
+    private String joinDetails(Map<String,Object> booking) {
+        String link = (String) booking.get("meeting_url");
+        return link.isBlank() ? "Open Live Classes > My Bookings in Sikai to join." : "Meeting: " + link;
     }
 
     private String startTime(Map<String,Object> booking) {

@@ -2,7 +2,7 @@
   <header class="board-heading">
     <div>
       <a class="back" routerLink="/live-classes" [queryParams]="{view: 'bookings'}">← Back to live classes</a>
-      <h1>Class whiteboard</h1>
+      <h1>{{ whiteboardOpen() || !board() ? 'Class whiteboard' : 'Live classroom' }}</h1>
       @if (board(); as room) { <p>{{ room.subject }}</p> }
     </div>
     @if (meetingLink(); as url) {
@@ -13,7 +13,14 @@
   @if (error() || syncError(); as problem) { <p class="error-note" role="alert">{{ problem }}</p> }
 
   @if (board(); as room) {
-    <div class="board-layout">
+    @if (room.sikaiVideo && now() < room.start - 5 * 60_000) {
+      <p class="board-note video-status">Sikai Video opens five minutes before the scheduled start.</p>
+    }
+    @if (!whiteboardOpen()) {
+      <p class="board-note video-status">{{ now() < room.start ? 'The whiteboard opens when the class starts.' : 'Review is available for your most recently completed class.' }}</p>
+    }
+    <div class="board-layout" [class.with-video]="videoOpen() && whiteboardOpen()" [class.video-only]="!whiteboardOpen()">
+      @if (whiteboardOpen()) {
       <aside class="panel slides">
         <h2>Slides</h2>
         <nav aria-label="Whiteboard slides">
@@ -156,6 +163,14 @@
         </div>
         <p class="board-note">Marks are shared with the class. Use Show marks to isolate a participant’s annotations.</p>
       </div>
+      }
+      @if (videoOpen()) {
+        @defer (on immediate) {
+          <app-classroom-video [slotId]="slotId" [autoJoin]="autoJoinVideo" />
+        } @loading {
+          <p class="video-status" role="status">Loading video controls…</p>
+        }
+      }
     </div>
   } @else if (!error() && !syncError()) {
     <p role="status">Loading classroom whiteboard…</p>

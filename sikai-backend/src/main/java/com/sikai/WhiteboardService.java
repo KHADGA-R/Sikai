@@ -43,9 +43,11 @@ public class WhiteboardService {
             FROM live_board_note n JOIN app_user u ON u.id=n.author_id
             WHERE n.slot_id=? AND n.slide_id=? ORDER BY n.revision
             """, slotId, slideId);
-        return Map.of("revision", current, "subject", slot.get("subject"), "instructor", user.id().equals(slot.get("owner_id")),
-            "instructorId", slot.get("owner_id"), "meetingUrl", slot.get("meeting_url"), "end", slot.get("end_at"),
-            "slides", slides, "marks", marks, "erasures", erasures, "notes", notes);
+        return Map.ofEntries(Map.entry("revision", current), Map.entry("subject", slot.get("subject")),
+            Map.entry("instructor", user.id().equals(slot.get("owner_id"))), Map.entry("instructorId", slot.get("owner_id")),
+            Map.entry("meetingUrl", slot.get("meeting_url")), Map.entry("start", slot.get("start_at")),
+            Map.entry("end", slot.get("end_at")), Map.entry("sikaiVideo", slot.get("sikai_video")),
+            Map.entry("slides", slides), Map.entry("marks", marks), Map.entry("erasures", erasures), Map.entry("notes", notes));
     }
 
     public Object image(String slotId, String slideId, AuthService.User user) {
@@ -156,7 +158,7 @@ public class WhiteboardService {
 
     private Map<String,Object> access(String slotId, AuthService.User user) {
         var slot = db.one("""
-            SELECT s.board_revision,s.closed,s.meeting_url,s.end_at,t.owner_id,t.subject FROM live_slot s
+            SELECT s.board_revision,s.closed,s.meeting_url,s.start_at,s.end_at,s.sikai_video,t.owner_id,t.subject FROM live_slot s
             JOIN teacher t ON t.id=s.teacher_id WHERE s.id=?
             """, slotId);
         Db.require(!Boolean.TRUE.equals(slot.get("closed")) && (user.id().equals(slot.get("owner_id"))

@@ -53,6 +53,11 @@ public class LiveController {
         return org.springframework.http.ResponseEntity.ok().cacheControl(org.springframework.http.CacheControl.noStore()).body(Map.of("url",live.join(id,user)));
     }
 
+    @PostMapping("/slots/{id}/video-token")
+    public org.springframework.http.ResponseEntity<Object> videoToken(@PathVariable String id,@AuthenticationPrincipal AuthService.User user) {
+        return org.springframework.http.ResponseEntity.ok().cacheControl(org.springframework.http.CacheControl.noStore()).body(live.videoCredentials(id,user));
+    }
+
     /** Commit a new or replacement booking before requesting optional confirmation email. */
     @PostMapping("/bookings") @ResponseStatus(org.springframework.http.HttpStatus.CREATED)
     public Object book(@Valid @RequestBody LiveService.BookInput input,@AuthenticationPrincipal AuthService.User user) {

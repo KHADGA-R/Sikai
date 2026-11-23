@@ -2,6 +2,9 @@
 .board-heading h1 { margin: 8px 0 0; }
 .board-heading p { margin: 4px 0 0; color: #4c6461; }
 .board-layout { display: grid; grid-template-columns: 190px minmax(0, 1fr); gap: 16px; align-items: start; }
+.board-layout.with-video { grid-template-columns: 150px minmax(0, 1fr) minmax(240px, 26%); }
+.board-layout.video-only { grid-template-columns: minmax(0, 1fr); }
+.video-status { margin-bottom: 10px; }
 .slides, .workspace { padding: 14px; }
 .slides h2 { font-size: 1rem; margin-bottom: 10px; }
 .slides nav, .slide-editor { display: grid; gap: 6px; }
@@ -42,4 +45,11 @@
   .board-layout { grid-template-columns: 1fr; }
   .slides nav { grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); }
   .undo { margin-inline-start: 0; }
+}
+@media (max-width: 1000px) {
+  .board-layout.with-video { grid-template-columns: 140px minmax(0, 1fr); }
+  .with-video app-classroom-video { grid-column: 1 / -1; grid-row: 1; }
+}
+@media (max-width: 760px) {
+  .board-layout.with-video { grid-template-columns: 1fr; }
 }

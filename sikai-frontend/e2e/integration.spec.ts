@@ -1,5 +1,9 @@
 import { test, expect, Page } from '@playwright/test';
 
+if (process.env.LIVEKIT_URL) {
+  test.use({ launchOptions: { args: ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream'] } });
+}
+
 const password = 'IntegrationPass123!';
 
 async function register(page: Page, role: 'student' | 'instructor', name: string) {
@@ -136,7 +140,11 @@ test('live teacher availability, student booking, messaging, meeting link and ca
     await expect(page.getByText('Meeting link updated for this class.', { exact: true })).toBeVisible();
     await student.reload();
     await student.getByRole('button', { name: 'My bookings', exact: true }).click();
-    await expect(booking.getByRole('link', { name: 'Join live class', exact: true })).toHaveAttribute('target', '_blank');
+    const joinLink = booking.getByRole('link', { name: 'Join live class', exact: true });
+    await expect(joinLink).toHaveCount(0);
+    await student.clock.setFixedTime(new Date(new Date(local).getTime() - 5 * 60_000));
+    await expect(joinLink).toHaveAttribute('target', '_blank');
+    await expect(booking.getByRole('link', { name: 'Open whiteboard' })).toHaveCount(0);
     await student.locator('summary').filter({ hasText: 'Lesson conversation' }).click();
     await student.getByLabel('Message', { exact: true }).fill('Hello teacher, ready to learn!');
     await student.getByRole('button', { name: 'Send message', exact: true }).click();
@@ -146,6 +154,11 @@ test('live teacher availability, student booking, messaging, meeting link and ca
     await page.locator('summary').filter({ hasText: 'Lesson conversation' }).click();
     await expect(page.getByText('Hello teacher, ready to learn!', { exact: true })).toBeVisible();
 
+    await expect(booking.getByRole('link', { name: 'Open whiteboard' })).toHaveCount(0);
+    await expect(page.locator('.booking-card').getByRole('link', { name: 'Open whiteboard' })).toHaveCount(0);
+    const currentClassTime = new Date(future.getTime() + 60_000);
+    await page.clock.setFixedTime(currentClassTime);
+    await student.clock.setFixedTime(currentClassTime);
     await page.locator('.booking-card').getByRole('link', { name: 'Open whiteboard' }).click();
     await booking.getByRole('link', { name: 'Open whiteboard' }).click();
     await expect(student.getByRole('heading', { name: 'Class whiteboard' })).toBeVisible();
@@ -255,10 +268,102 @@ test('live teacher availability, student booking, messaging, meeting link and ca
     await expect(student.getByRole('heading', { name: 'Class whiteboard' })).toBeVisible();
     await meetingTab.close();
     await student.getByRole('link', { name: 'Back to live classes' }).click();
+    await student.route('**/api/live-classes/bookings', async route => {
+      if (route.request().method() !== 'GET') return route.continue();
+      const response = await route.fetch();
+      const rows = await response.json();
+      const newest = rows[0];
+      const older = {
+        ...newest,
+        id: 'older-booking',
+        slotId: 'older-slot',
+        goals: 'Older lesson',
+        slot: { ...newest.slot, id: 'older-slot', start: newest.slot.start - 86400000, end: newest.slot.end - 86400000 },
+      };
+      await route.fulfill({ response, json: [...rows, older] });
+    });
+    await student.clock.setFixedTime(new Date(future.getTime() + 46 * 60_000));
+    await student.reload();
+    await expect(booking.getByRole('link', { name: 'Open whiteboard' })).toHaveCount(1);
+    await expect(student.locator('.booking-card').filter({ hasText: 'Older lesson' }).getByRole('link', { name: 'Open whiteboard' })).toHaveCount(0);
+    await student.unroute('**/api/live-classes/bookings');
+    await student.clock.setFixedTime(new Date());
+    await student.reload();
     student.on('dialog', dialog => dialog.accept());
     await student.getByRole('button', { name: 'Cancel booking', exact: true }).click();
     await expect(student.locator('.booking-card .subject-label')).toHaveText('Cancelled');
+    await expect(student.getByRole('link', { name: 'Open whiteboard' })).toHaveCount(0);
   } finally { await context.close(); }
+});
+
+test.describe('Sikai Video with a real local media server', () => {
+  test.skip(!process.env.LIVEKIT_URL, 'Start LiveKit and configure the local test environment');
+
+  test('teacher and students share media beside the whiteboard', async ({ page, browser, context }) => {
+    await context.grantPermissions(['camera', 'microphone']);
+    await register(page, 'instructor', 'Video Teacher');
+    await page.goto('/instructor/about');
+    await page.getByRole('combobox', { name: 'Teaching subject', exact: true }).selectOption('Music');
+    await page.getByLabel('Introduction', { exact: true }).fill('Music video classes');
+    await page.getByLabel('Teaching languages', { exact: true }).fill('English');
+    await page.getByRole('button', { name: 'Save teacher profile' }).click();
+    await expect(page.getByRole('heading', { name: 'Video Teacher', exact: true })).toBeVisible();
+    await page.goto('/live-classes?view=teach');
+    const future = new Date(Date.now() + 4 * 60_000);
+    const local = new Date(future.getTime() - future.getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
+    await page.getByLabel('Start date and time').fill(local);
+    await page.getByLabel('Student seats').fill('2');
+    await page.getByRole('combobox', { name: 'Classroom', exact: true }).selectOption({ label: 'Sikai Video' });
+    await page.getByRole('button', { name: 'Publish available time' }).click();
+    await expect(page.getByText('Availability published.', { exact: false })).toBeVisible();
+
+    const learnerContext = await browser.newContext({ permissions: ['camera', 'microphone'] });
+    const classmateContext = await browser.newContext();
+    try {
+      const learner = await learnerContext.newPage();
+      const classmate = await classmateContext.newPage();
+      for (const [studentPage, name] of [[learner, 'Video Student'], [classmate, 'Video Classmate']] as const) {
+        await register(studentPage, 'student', name);
+        await studentPage.goto('/live-classes');
+        await studentPage.locator('.teacher-card').filter({ hasText: 'Video Teacher' })
+          .getByRole('button', { name: 'View available times' }).click();
+        await studentPage.locator('.slot-list button').first().click();
+        await studentPage.getByRole('button', { name: 'Confirm booking' }).click();
+      }
+
+      await page.getByRole('button', { name: 'Start live class', exact: true }).click();
+      await learner.locator('.booking-card').getByRole('button', { name: 'Join live class', exact: true }).click();
+      await classmate.locator('.booking-card').getByRole('button', { name: 'Join live class', exact: true }).click();
+      const teacherRoom = page.getByRole('region', { name: 'Sikai Video' });
+      const learnerRoom = learner.getByRole('region', { name: 'Sikai Video' });
+      await expect(learner.getByText('The whiteboard opens when the class starts.')).toBeVisible();
+      await expect(learner.locator('.surface')).toHaveCount(0);
+      await expect(teacherRoom.getByText('Video Student', { exact: true })).toBeVisible();
+      await expect(teacherRoom.getByText('Video Classmate', { exact: true })).toBeVisible();
+      await expect(teacherRoom.getByRole('button', { name: 'Share screen' })).toBeVisible();
+      await expect(learnerRoom.getByRole('button', { name: 'Share screen' })).toHaveCount(0);
+      await teacherRoom.getByRole('button', { name: 'Turn on camera' }).click();
+      const received = learnerRoom.locator('video[aria-label="Video Teacher camera"]');
+      await expect(received).toBeVisible();
+      await expect.poll(() => received.evaluate((video: HTMLVideoElement) => video.videoWidth)).toBeGreaterThan(0);
+      await teacherRoom.getByRole('button', { name: 'Turn on microphone' }).click();
+      await expect(learnerRoom.locator('audio')).toHaveCount(1);
+      // Headless Chrome has no system screen picker. Feed a test stream through the SDK's screen-share path.
+      await page.evaluate(() => {
+        Object.defineProperty(navigator.mediaDevices, 'getDisplayMedia', {
+          configurable: true, value: () => navigator.mediaDevices.getUserMedia({ video: true }),
+        });
+      });
+      await teacherRoom.getByRole('button', { name: 'Share screen', exact: true }).click();
+      const screen = classmate.locator('video[aria-label="Video Teacher screen"]');
+      await expect.poll(() => screen.evaluate((video: HTMLVideoElement) => video.videoWidth)).toBeGreaterThan(0);
+      await teacherRoom.getByRole('button', { name: 'Stop sharing', exact: true }).click();
+      await expect(screen).toHaveCount(0);
+      await learnerRoom.getByRole('button', { name: 'Leave video' }).click();
+      await expect(teacherRoom.getByText('Video Student', { exact: true })).toHaveCount(0);
+      await expect(learner.getByRole('heading', { name: 'Live classroom' })).toBeVisible();
+    } finally { await Promise.all([learnerContext.close(), classmateContext.close()]); }
+  });
 });
 
 test('admin uses real authorization and server errors are visible', async ({ page }) => {

@@ -3,7 +3,7 @@ export interface Teacher { id: string; ownerId: string; name: string; subject: s
 export function safeTeacherPhoto(value: unknown): value is string {
   return typeof value === 'string' && (value === '' || value.length <= 300000 && /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/]+={0,2}$/.test(value));
 }
-export interface LiveSlot { id: string; teacherId: string; start: number; end: number; meetingUrl: string; closed?: boolean; capacity?: number; seatsRemaining?: number; classroomAvailable?: boolean; }
+export interface LiveSlot { id: string; teacherId: string; start: number; end: number; meetingUrl: string; closed?: boolean; capacity?: number; seatsRemaining?: number; classroomAvailable?: boolean; sikaiVideo?: boolean; }
 export interface LiveClassDiscovery {
   slotId: string;
   teacherId: string;
@@ -16,6 +16,18 @@ export interface LiveClassDiscovery {
 export interface ClassMessage { id: string; senderId: string; senderName: string; text: string; sentAt: number; }
 export interface Booking { id: string; slotId: string; studentId: string; studentName: string; studentEmail?: string; timezone?: string; goals: string; status: 'confirmed' | 'cancelled'; messages: ClassMessage[]; }
 export interface LiveState { teachers: Teacher[]; slots: LiveSlot[]; bookings: Booking[]; }
+
+export const LIVE_CLASS_JOIN_LEAD_MS = 5 * 60_000;
+
+export function isCurrentLiveSlot(slot: Pick<LiveSlot, 'start' | 'end' | 'closed'>, now: number): boolean {
+  return !slot.closed && slot.start <= now && now < slot.end;
+}
+
+export function latestCompletedSlotId(state: LiveState, now: number): string | undefined {
+  const confirmed = new Set(state.bookings.filter(booking => booking.status === 'confirmed').map(booking => booking.slotId));
+  return state.slots.filter(slot => !slot.closed && slot.end <= now && confirmed.has(slot.id))
+    .sort((a, b) => b.end - a.end || b.start - a.start || a.id.localeCompare(b.id))[0]?.id;
+}
 /** Compare half-open time intervals; a class ending exactly when another starts does not overlap. */
 export function overlaps(a: LiveSlot, b: LiveSlot): boolean { return a.start < b.end && b.start < a.end; }
 /**

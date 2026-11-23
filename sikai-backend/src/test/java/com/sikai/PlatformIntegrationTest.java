@@ -15,7 +15,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.assertj.core.api.Assertions.*;
 
 /** Tests real migrations, SQL, authentication and transactional booking rules against isolated H2. */
-@SpringBootTest(properties={"spring.datasource.url=jdbc:h2:mem:sikai-test;MODE=PostgreSQL;DB_CLOSE_DELAY=-1","sikai.upload-directory=target/test-uploads","sikai.admin-email=admin@test.example","sikai.admin-password=AdminPass123!"})
+@SpringBootTest(properties={"spring.datasource.url=jdbc:h2:mem:sikai-test;MODE=PostgreSQL;DB_CLOSE_DELAY=-1","sikai.upload-directory=target/test-uploads","sikai.admin-email=admin@test.example","sikai.admin-password=AdminPass123!","LIVEKIT_URL=ws://127.0.0.1:7880","LIVEKIT_API_KEY=test-key","LIVEKIT_API_SECRET=test-secret"})
 @AutoConfigureMockMvc
 class PlatformIntegrationTest {
     @Autowired MockMvc mvc;
@@ -297,6 +297,7 @@ class PlatformIntegrationTest {
         assertThat(request("GET","/api/live-classes/slots",null,null,200).toString()).doesNotContain("private");
         request("POST","/api/live-classes/slots",teacher,Map.of("start",start+1000,"minutes",45,"meetingUrl",""),409);
         String booking=request("POST","/api/live-classes/bookings",student,Map.of("slotId",slot,"goals","Conversation","timezone","Asia/Kathmandu"),201).get("id").asText();
+        request("POST","/api/live-classes/slots/"+slot+"/join",student,null,409);
         request("POST","/api/live-classes/bookings",stranger,Map.of("slotId",slot,"goals","","timezone","UTC"),409);
         request("POST","/api/live-classes/confirmation",stranger,Map.of("bookingId",booking),403);
         request("POST","/api/live-classes/bookings/"+booking+"/messages",stranger,Map.of("text","Intruder"),403);
@@ -312,7 +313,7 @@ class PlatformIntegrationTest {
         String teacher=register("instructor"), first=register("student"), second=register("student"), third=register("student");
         request("PUT","/api/live-classes/teacher",teacher,Map.of("subject","Music","bio","Group lessons","languages","Nepali"),200);
         String room="https://meet.example.test/group";
-        long start=System.currentTimeMillis()+3_600_000;
+        long start=System.currentTimeMillis()+120_000;
         String slot=request("POST","/api/live-classes/slots",teacher,
             Map.of("start",start,"minutes",30,"meetingUrl",room,"capacity",2),201).path("id").asText();
         String join="/api/live-classes/slots/"+slot+"/join";
@@ -334,6 +335,34 @@ class PlatformIntegrationTest {
         request("POST","/api/live-classes/bookings/"+firstBooking+"/cancel",first,null,200);
         request("POST",join,first,null,403);
         request("POST","/api/live-classes/bookings",third,booking,201);
+    }
+    @Test void sikaiVideoRequiresBookingAndIssuesRoleSpecificRoomCredentials() throws Exception {
+        String teacher=register("instructor"), student=register("student"), outsider=register("student");
+        request("PUT","/api/live-classes/teacher",teacher,Map.of("subject","Music","bio","Group lessons","languages","Nepali"),200);
+        long start=System.currentTimeMillis()+120_000;
+        String slots="/api/live-classes/slots";
+        request("POST",slots,teacher,Map.of("start",start,"minutes",30,"meetingUrl","https://meet.example.test","sikaiVideo",true),400);
+        String slot=request("POST",slots,teacher,Map.of("start",start,"minutes",30,"meetingUrl","","sikaiVideo",true),201).path("id").asText();
+        String tokenPath=slots+"/"+slot+"/video-token";
+        request("POST",tokenPath,null,null,401);
+        request("POST",tokenPath,outsider,null,403);
+        String booking=request("POST","/api/live-classes/bookings",student,Map.of("slotId",slot,"goals","","timezone","UTC"),201).path("id").asText();
+        var studentToken=request("POST",tokenPath,student,null,200);
+        var teacherToken=request("POST",tokenPath,teacher,null,200);
+        assertThat(studentToken.path("canShareScreen").asBoolean()).isFalse();
+        assertThat(teacherToken.path("canShareScreen").asBoolean()).isTrue();
+        for(var credentials:List.of(studentToken,teacherToken)){
+            String[] parts=credentials.path("token").asText().split("\\.");
+            var claims=mapper.readTree(Base64.getUrlDecoder().decode(parts[1]));
+            assertThat(claims.path("exp").asLong()-claims.path("iat").asLong()).isBetween(1L,90L);
+            assertThat(claims.path("video").path("room").asText()).isEqualTo("sikai-"+slot);
+            assertThat(claims.path("video").path("canPublishSources").toString().contains("screen_share"))
+                .isEqualTo(credentials.path("canShareScreen").asBoolean());
+        }
+        request("POST","/api/live-classes/bookings/"+booking+"/cancel",student,null,200);
+        request("POST",tokenPath,student,null,403);
+        String later=request("POST",slots,teacher,Map.of("start",start+3_600_000,"minutes",30,"meetingUrl","","sikaiVideo",true),201).path("id").asText();
+        request("POST",slots+"/"+later+"/video-token",teacher,null,409);
     }
     @Test void whiteboardSharesSlidesAndKeepsMarksByAuthor() throws Exception {
         String teacher=register("instructor"), first=register("student"), second=register("student"), outsider=register("student");

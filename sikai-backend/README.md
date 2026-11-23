@@ -101,7 +101,7 @@ Log in through Angular or `POST /api/auth/login`. Remove these variables after t
 
 ## Live classrooms
 
-Instructors can publish availability with one student seat for a private lesson or up to 50 student seats for a group. Existing slots retain one seat. A confirmed student can use **Join live class** in **My bookings** as soon as an external meeting link is saved, until the scheduled end. BigBlueButton rooms open five minutes before the start. The instructor can start the room from **My Classes** or **Set availability**.
+Instructors can publish availability with one student seat for a private lesson or up to 50 student seats for a group. Existing slots retain one seat. A confirmed student can use **Join live class** in **My bookings** from five minutes before the start until the scheduled end. The instructor can start the room from **My Classes** or **Set availability**.
 
 To use BigBlueButton, set these values in the backend terminal before starting Spring Boot. Example for Windows Command Prompt:
 
@@ -123,7 +123,22 @@ With **Eraser** selected, scroll up over the board to increase its size or down 
 
 Choose **Yellow** or **Pink** from **Sticky note** to add a note to the selected slide. Type directly in it, drag its top edge to move it, or drag the bottom-right handle to resize it. Notes are shared with the class. Each participant can edit or delete their own notes.
 
-When a saved external meeting link is available, **Start live class** or **Join live class** opens the video separately and loads the whiteboard in the original Sikai tab. To use a separate desktop window, right-click **Open video call** on the whiteboard and choose **Open link in new window**. The instructor and confirmed students can revisit their class board after the scheduled end.
+When a saved external meeting link is available, **Start live class** or **Join live class** opens the video separately. During class, the original Sikai tab opens the whiteboard. **Open whiteboard** is shown for a current class and for the most recently completed confirmed class, which the instructor and students can revisit to add notes.
+
+### Sikai Video on the same page
+
+Install the [LiveKit server](https://github.com/livekit/livekit/releases) and run `livekit-server --dev` locally. In the Windows Command Prompt used to launch Spring Boot, set the local development credentials below and restart it so migration V21 applies.
+
+```cmd
+set "LIVEKIT_URL=ws://127.0.0.1:7880"
+set "LIVEKIT_API_KEY=devkey"
+set "LIVEKIT_API_SECRET=secret"
+mvn spring-boot:run
+```
+
+Start Angular as usual. When publishing availability, choose **Sikai Video** in **Classroom**. The instructor and confirmed students can join starting five minutes before class. They enter a shared room beside the whiteboard, with microphones and cameras off initially. The instructor can share a screen. For a local test, publish a class starting within five minutes and join from separate instructor and student browser sessions.
+
+For production, use a browser-reachable `wss://` LiveKit address, production API credentials, and [LiveKit’s HTTPS and TURN deployment guidance](https://docs.livekit.io/transport/self-hosting/deployment/). Keep the API secret in the backend environment. Sikai does not configure recording, and room tokens grant only classroom media permissions.
 
 ## Configuration
 
