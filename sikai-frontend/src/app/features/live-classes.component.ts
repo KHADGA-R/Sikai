@@ -4,7 +4,7 @@ import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { AuthService } from '../core/auth.service';
 import { CATEGORY_NAMES } from '../core/categories';
 import { LiveClassesService } from '../core/live-classes.service';
-import { Booking, LiveSlot } from '../core/live-classes';
+import { Booking, LiveSlot, safeMeetingUrl } from '../core/live-classes';
 
 @Component({ standalone: true, imports: [FormsModule, RouterLink], templateUrl: './live-classes.component.html', styleUrl: './live-classes.component.css' })
 export class LiveClassesComponent implements OnDestroy {
@@ -16,7 +16,7 @@ export class LiveClassesComponent implements OnDestroy {
   readonly timezones = [...new Set([this.timezone(), 'Asia/Kathmandu', 'UTC', 'America/Los_Angeles', 'Europe/London', 'Asia/Kolkata', 'Australia/Sydney'])];
   readonly now = signal(Date.now()); private readonly timer = setInterval(() => { this.now.set(Date.now()); }, 1000);
   readonly busy = signal(false); readonly error = signal(''); readonly notice = signal(''); readonly selectedSlot = signal(''); readonly rescheduling = signal('');
-  goals = ''; start = ''; minutes = 45; meetingUrl = ''; bio = ''; languages = ''; teachingSubject = 'Culture & Heritage';
+  goals = ''; start = ''; minutes = 45; capacity: number | null = 1; meetingUrl = ''; bio = ''; languages = ''; teachingSubject = 'Culture & Heritage';
   photoUrl = '';
   readonly editingProfile = signal(false);
   readonly photoBusy = signal(false);
@@ -24,7 +24,7 @@ export class LiveClassesComponent implements OnDestroy {
   readonly myTeacher = computed(() => this.live.state().teachers.find(t => t.ownerId === this.auth.user()?.id));
   readonly teachers = computed(() => this.live.state().teachers.filter(t => (this.subject() === 'All' || t.subject === this.subject()) && (t.name + ' ' + t.subject + ' ' + t.languages).toLowerCase().includes(this.query().trim().toLowerCase())));
   readonly selectedTeacher = computed(() => this.live.state().teachers.find(t => t.id === this.teacherId()));
-  readonly slots = computed(() => this.live.state().slots.filter(s => !s.closed && s.teacherId === this.teacherId() && s.start > this.now() && !this.live.state().bookings.some(b => b.slotId === s.id && b.status === 'confirmed') && (!this.date() || this.dateKey(s.start) === this.date())).sort((a,b) => a.start - b.start));
+  readonly slots = computed(() => this.live.state().slots.filter(s => !s.closed && s.teacherId === this.teacherId() && s.start > this.now() && (s.seatsRemaining ?? 1) > 0 && !this.live.state().bookings.some(b => b.slotId === s.id && b.status === 'confirmed' && b.studentId === this.auth.user()?.id) && (!this.date() || this.dateKey(s.start) === this.date())).sort((a,b) => a.start - b.start));
   readonly activeSlot = computed(() => this.slots().find(slot => slot.id === this.selectedSlot()));
   readonly mySlots = computed(() => this.live.state().slots.filter(s => !s.closed && s.teacherId === this.myTeacher()?.id && s.end > this.now()).sort((a,b) => a.start - b.start));
   readonly bookings = computed(() => this.live.state().bookings.filter(b => b.studentId === this.auth.user()?.id || this.live.state().slots.some(s => s.id === b.slotId && s.teacherId === this.myTeacher()?.id)).map(b => ({ booking: b, slot: this.live.state().slots.find(s => s.id === b.slotId) })).filter(row => !!row.slot).sort((a,b) => b.slot!.start - a.slot!.start));
@@ -32,9 +32,25 @@ export class LiveClassesComponent implements OnDestroy {
     const studentId = this.auth.user()?.id;
     const now = this.now();
     return this.bookings().filter(({ booking, slot }) =>
-      booking.studentId === studentId && booking.status === 'confirmed' && slot && slot.start > now
+      booking.studentId === studentId && booking.status === 'confirmed' && slot && slot.end > now
     ).at(-1)?.slot;
   });
+
+  canJoin(slot: LiveSlot): boolean {
+    return !slot.closed && this.now() < slot.end &&
+      (!!slot.meetingUrl || (!!slot.classroomAvailable && this.now() >= slot.start - 5 * 60_000));
+  }
+
+  async join(slot: LiveSlot): Promise<void> {
+    await this.action(async () => {
+      if (slot.meetingUrl && safeMeetingUrl(slot.meetingUrl)) {
+        window.location.assign(slot.meetingUrl);
+        return;
+      }
+      const { url } = await this.live.joinSlot(slot.id);
+      window.location.assign(url);
+    }, 'Opening classroom...');
+  }
 
   countdown(start: number): string {
     const seconds = Math.max(0, Math.ceil((start - this.now()) / 1000));
@@ -139,7 +155,11 @@ export class LiveClassesComponent implements OnDestroy {
   /** Discard the replacement selection without cancelling the original confirmed booking. */
   cancelReschedule(): void { this.rescheduling.set(''); this.selectedSlot.set(''); this.goals = ''; this.notice.set('Rescheduling cancelled. Your original booking is unchanged.'); }
   /** Ask for confirmation before requesting cancellation of an upcoming class. */
-  async cancel(booking: Booking): Promise<void> { if(window.confirm('Cancel this class? The time will become available to other students.')) await this.action(() => this.live.cancel(booking.id),'Class cancelled.'); }
+  async cancel(booking: Booking): Promise<void> {
+    if (window.confirm('Cancel this booking? The seat will become available to another student.')) {
+      await this.action(() => this.live.cancel(booking.id), 'Booking cancelled.');
+    }
+  }
   /** Persist the teacher introduction, languages and optional picture, then leave edit mode after success. */
   async saveProfile(): Promise<void> {
     if (this.photoBusy()) return;
@@ -150,7 +170,18 @@ export class LiveClassesComponent implements OnDestroy {
     }, updating ? 'Teacher profile updated.' : 'Teacher profile saved. Open Live Classes to set your availability.');
   }
   /** Convert the device-local date input into an epoch instant and publish availability through the service. */
-  async addSlot(): Promise<void> { await this.action(async () => { await this.live.addSlot(new Date(this.start).getTime(),this.minutes,this.meetingUrl); this.start = ''; this.meetingUrl = ''; },'Availability published. Students can now book this time.'); }
+  async addSlot(): Promise<void> {
+    await this.action(async () => {
+      const capacity = this.capacity;
+      if (capacity === null || !Number.isInteger(capacity) || capacity < 1 || capacity > 50) {
+        throw new Error('Enter a whole number between 1 and 50 for student seats.');
+      }
+      await this.live.addSlot(new Date(this.start).getTime(), this.minutes, this.meetingUrl, capacity);
+      this.start = '';
+      this.meetingUrl = '';
+      this.capacity = 1;
+    }, 'Availability published. Students can now book this time.');
+  }
   /** Save a slot's meeting URL and display the mutation result. */
   async updateMeeting(id: string, url: string): Promise<void> { await this.action(() => this.live.updateMeeting(id,url),'Meeting link updated for this class.'); }
   /** Confirm withdrawal of an owned slot before sending the request. */

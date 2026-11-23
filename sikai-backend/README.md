@@ -99,6 +99,22 @@ mvn spring-boot:run
 
 Log in through Angular or `POST /api/auth/login`. Remove these variables after the first successful startup if they are no longer needed. Bootstrap creates an account only if the email is absent. It does not reset existing passwords or promote an existing student/instructor account. No default password is supplied.
 
+## Live classrooms
+
+Instructors can publish availability with one student seat for a private lesson or up to 50 student seats for a group. Existing slots retain one seat. A confirmed student can use **Join live class** in **My bookings** as soon as an external meeting link is saved, until the scheduled end. BigBlueButton rooms open five minutes before the start. The instructor can start the room from **My Classes** or **Set availability**.
+
+To use BigBlueButton, set these values in the backend terminal before starting Spring Boot. Example for Windows Command Prompt:
+
+```cmd
+set "BBB_API_URL=https://bbb.example.com/bigbluebutton/api/"
+set "BBB_API_SECRET=your-server-shared-secret"
+mvn spring-boot:run
+```
+
+Use an API-enabled BigBlueButton server and its shared secret. Keep the secret on the backend. Leave the meeting link blank when publishing a slot to use BigBlueButton. An explicit HTTPS meeting link continues to work for existing slots or external meetings. BigBlueButton opens in the browser with the instructor as moderator and the confirmed students as viewers. Sikai uses one meeting ID per slot and disables recording when it creates the room.
+
+To try the flow locally, start the Angular app and backend, publish a two-seat slot starting within five minutes, and book it from two student accounts in separate browser sessions. Both students should enter the instructor's room, and a third student should see that the class is full. Without a running BigBlueButton instance, an HTTPS meeting link can exercise the booking and join flow. A real BigBlueButton server is required to test classroom media and whiteboard tools.
+
 ## Configuration
 
 Set environment variables in the terminal before starting the application.

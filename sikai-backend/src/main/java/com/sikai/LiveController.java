@@ -48,6 +48,11 @@ public class LiveController {
     /** Return only bookings in which the principal is the student or teacher. */
     @GetMapping("/bookings") public Object bookings(@AuthenticationPrincipal AuthService.User user) { return live.bookings(user); }
 
+    @PostMapping("/slots/{id}/join")
+    public org.springframework.http.ResponseEntity<Map<String,String>> join(@PathVariable String id,@AuthenticationPrincipal AuthService.User user) {
+        return org.springframework.http.ResponseEntity.ok().cacheControl(org.springframework.http.CacheControl.noStore()).body(Map.of("url",live.join(id,user)));
+    }
+
     /** Commit a new or replacement booking before requesting optional confirmation email. */
     @PostMapping("/bookings") @ResponseStatus(org.springframework.http.HttpStatus.CREATED)
     public Object book(@Valid @RequestBody LiveService.BookInput input,@AuthenticationPrincipal AuthService.User user) {

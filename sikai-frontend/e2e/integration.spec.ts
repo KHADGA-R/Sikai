@@ -118,7 +118,6 @@ test('live teacher availability, student booking, messaging, meeting link and ca
   const future = new Date(Date.now() + 3 * 86400000);
   const local = new Date(future.getTime() - future.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
   await page.getByLabel('Start date and time', { exact: true }).fill(local);
-  await page.getByLabel('Meeting link (optional)', { exact: true }).fill('https://meet.example.com/sikai-e2e');
   await page.getByRole('button', { name: 'Publish available time', exact: true }).click();
   await expect(page.getByText('Availability published.', { exact: false })).toBeVisible();
 
@@ -128,9 +127,16 @@ test('live teacher availability, student booking, messaging, meeting link and ca
     await student.goto('/live-classes');
     await student.locator('.teacher-card').filter({ has: student.getByRole('heading', { name: 'Live Teacher', exact: true }) }).getByRole('button', { name: 'View available times', exact: true }).click();
     await student.locator('.slot-list button').first().click();
-    await student.getByLabel('What would you like to learn?', { exact: true }).fill('Practice rhythm');
+    await student.getByRole('textbox', { name: 'What would you like to learn?', exact: true }).fill('Practice rhythm');
     await student.getByRole('button', { name: 'Confirm booking', exact: true }).click();
-    await expect(student.getByRole('link', { name: 'Open meeting', exact: true })).toHaveAttribute('href', 'https://meet.example.com/sikai-e2e');
+    const booking = student.locator('.booking-card').filter({ hasText: 'Live Teacher' });
+    await expect(booking.getByText('Waiting for the instructor to set up the classroom.')).toBeVisible();
+    await page.getByRole('textbox', { name: 'Meeting link', exact: true }).fill('https://meet.example.com/sikai-e2e');
+    await page.getByRole('button', { name: 'Update link', exact: true }).click();
+    await expect(page.getByText('Meeting link updated for this class.', { exact: true })).toBeVisible();
+    await student.reload();
+    await student.getByRole('button', { name: 'My bookings', exact: true }).click();
+    await expect(booking.getByRole('button', { name: 'Join live class', exact: true })).toBeVisible();
     await student.locator('summary').filter({ hasText: 'Lesson conversation' }).click();
     await student.getByLabel('Message', { exact: true }).fill('Hello teacher, ready to learn!');
     await student.getByRole('button', { name: 'Send message', exact: true }).click();
@@ -139,8 +145,16 @@ test('live teacher availability, student booking, messaging, meeting link and ca
     await expect(page.getByText('Practice rhythm', { exact: true })).toBeVisible();
     await page.locator('summary').filter({ hasText: 'Lesson conversation' }).click();
     await expect(page.getByText('Hello teacher, ready to learn!', { exact: true })).toBeVisible();
+    await student.route('**/api/live-classes/slots/*/join', route => route.fulfill({
+      status: 404, json: { message: 'Endpoint not found' },
+    }));
+    await student.route('https://meet.example.com/sikai-e2e', route => route.fulfill({ body: 'Local classroom fixture' }));
+    await booking.getByRole('button', { name: 'Join live class', exact: true }).click();
+    await expect(student).toHaveURL('https://meet.example.com/sikai-e2e');
+    await student.goto('/live-classes');
+    await student.getByRole('button', { name: 'My bookings', exact: true }).click();
     student.on('dialog', dialog => dialog.accept());
-    await student.getByRole('button', { name: 'Cancel class', exact: true }).click();
+    await student.getByRole('button', { name: 'Cancel booking', exact: true }).click();
     await expect(student.locator('.booking-card .subject-label')).toHaveText('Cancelled');
   } finally { await context.close(); }
 });

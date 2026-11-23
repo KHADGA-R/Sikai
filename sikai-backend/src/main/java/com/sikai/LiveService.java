@@ -15,23 +15,25 @@ public class LiveService {
     /** Public teaching metadata; ownership and the teacher name are derived from the principal. */
     public record TeacherInput(@NotBlank String subject,@NotBlank @Size(max=1000) String bio,@NotBlank @Size(max=120) String languages,@Size(max=300000) String photoUrl) {}
     /** Start is epoch milliseconds; duration is one of the supported minute values. */
-    public record SlotInput(long start,int minutes,@NotNull @Size(max=2048) String meetingUrl) {}
+    public record SlotInput(long start,int minutes,@NotNull @Size(max=2048) String meetingUrl,@Min(1) @Max(50) Integer capacity) {}
     /** Optional replacing identifies a booking to reschedule atomically; timezone is an IANA zone ID. */
     public record BookInput(@NotBlank String slotId,@NotNull @Size(max=1000) String goals,@NotBlank @Size(max=100) String timezone,String replacing) {}
     static final String TEACHERS="SELECT t.id,t.owner_id AS \"ownerId\",u.name,t.subject,t.bio,t.languages,t.photo_url AS \"photoUrl\" FROM teacher t JOIN app_user u ON u.id=t.owner_id";
-    static final String SLOTS="SELECT s.id,s.teacher_id AS \"teacherId\",s.start_at AS start,s.end_at AS \"end\",s.closed FROM live_slot s";
+    private static final String BOOKED="(SELECT COUNT(*) FROM booking b WHERE b.slot_id=s.id AND b.status='confirmed')";
+    static final String SLOTS="SELECT s.id,s.teacher_id AS \"teacherId\",s.start_at AS start,s.end_at AS \"end\",s.closed,s.capacity,s.capacity-"+BOOKED+" AS \"seatsRemaining\" FROM live_slot s";
     static final String BOOKINGS="SELECT b.id,b.slot_id AS \"slotId\",b.student_id AS \"studentId\",u.name AS \"studentName\",u.email AS \"studentEmail\",b.goals,b.timezone,b.status FROM booking b JOIN app_user u ON u.id=b.student_id";
     final Db db; private final CatalogService catalog;
     private final NotificationService notifications;
+    private final ClassroomGateway classroom;
 
     /** Share the database and catalog authorization rules with transactional live scheduling. */
-    public LiveService(Db db,CatalogService catalog,NotificationService notifications) { this.db=db; this.catalog=catalog; this.notifications=notifications; }
+    public LiveService(Db db,CatalogService catalog,NotificationService notifications,ClassroomGateway classroom) { this.db=db; this.catalog=catalog; this.notifications=notifications; this.classroom=classroom; }
 
     /** List teacher profiles with names derived from their owning user accounts. */
     public Object teachers() { return db.list(TEACHERS+" ORDER BY u.name"); }
 
-    /** List only future open slots without confirmed bookings, deliberately omitting meeting URLs. */
-    public Object slots() { return db.list(SLOTS+" WHERE s.closed=FALSE AND s.start_at>? AND NOT EXISTS (SELECT b.id FROM booking b WHERE b.slot_id=s.id AND b.status='confirmed') ORDER BY s.start_at",System.currentTimeMillis()); }
+    /** List future slots with seats available, omitting meeting URLs. */
+    public Object slots() { return db.list(SLOTS+" WHERE s.closed=FALSE AND s.start_at>? AND "+BOOKED+"<s.capacity ORDER BY s.start_at",System.currentTimeMillis()); }
 
     /** Return the next five open class times, with aggregate booking activity for each teacher. */
     public Object discovery() {
@@ -50,7 +52,7 @@ public class LiveService {
             JOIN app_user u ON u.id = t.owner_id
             LEFT JOIN activity a ON a.teacher_id = t.id
             WHERE s.closed = FALSE AND s.start_at > ?
-              AND NOT EXISTS (SELECT 1 FROM booking b WHERE b.slot_id = s.id AND b.status = 'confirmed')
+              AND (SELECT COUNT(*) FROM booking b WHERE b.slot_id = s.id AND b.status = 'confirmed') < s.capacity
             ORDER BY s.start_at, s.id
             LIMIT 5
             """, now - Duration.ofDays(30).toMillis(), now);
@@ -81,9 +83,10 @@ public class LiveService {
         var teacher=db.one("SELECT id FROM teacher WHERE owner_id=?",user.id()); String tid=(String)teacher.get("id");
         long end=input.start+input.minutes*60000L;
         Db.require(!db.exists("SELECT id FROM live_slot WHERE teacher_id=? AND closed=FALSE AND start_at<? AND end_at>?",tid,end,input.start),CONFLICT,"Availability overlaps another slot");
-        Db.require(!busy(user.id(),input.start,end,""),CONFLICT,"You already have a booking at this time");
-        String id=Db.id(); db.update("INSERT INTO live_slot(id,teacher_id,start_at,end_at,meeting_url) VALUES (?,?,?,?,?)",id,tid,input.start,end,input.meetingUrl.trim());
-        return Map.of("id",id,"teacherId",tid,"start",input.start,"end",end,"meetingUrl",input.meetingUrl.trim(),"closed",false);
+        Db.require(!busy(user.id(),input.start,end,"",""),CONFLICT,"You already have a booking at this time");
+        int capacity=input.capacity==null?1:input.capacity;
+        String id=Db.id(); db.update("INSERT INTO live_slot(id,teacher_id,start_at,end_at,meeting_url,capacity) VALUES (?,?,?,?,?,?)",id,tid,input.start,end,input.meetingUrl.trim(),capacity);
+        return slotDetails(id);
     }
 
     /** Close an owned slot while retaining booking history; confirmed bookings block withdrawal. */
@@ -119,8 +122,9 @@ public class LiveService {
             Db.require(old.get("student_id").equals(user.id()) && old.get("status").equals("confirmed") && ((Number)old.get("start_at")).longValue()>System.currentTimeMillis(),CONFLICT,"Only your upcoming confirmed bookings can be rescheduled");
             Db.require(!old.get("slot_id").equals(input.slotId),CONFLICT,"Choose a different slot");
         }
-        Db.require(!db.exists("SELECT id FROM booking WHERE slot_id=? AND status='confirmed' AND id<>?",input.slotId,replacing),CONFLICT,"Slot already booked");
-        Db.require(!busy(user.id(),start,end,replacing) && !busy(owner,start,end,replacing),CONFLICT,"Booking overlaps another class for you or the teacher");
+        int booked=((Number)db.one("SELECT COUNT(*) AS total FROM booking WHERE slot_id=? AND status='confirmed'",input.slotId).get("total")).intValue();
+        Db.require(booked<((Number)slot.get("capacity")).intValue(),CONFLICT,"Slot already booked or full");
+        Db.require(!busy(user.id(),start,end,replacing,"") && !busy(owner,start,end,replacing,input.slotId),CONFLICT,"Booking overlaps another class for you or the teacher");
         if(!replacing.isEmpty()) db.update("UPDATE booking SET status='cancelled' WHERE id=?",replacing);
         String id=Db.id(); db.update("INSERT INTO booking(id,slot_id,student_id,goals,timezone,status,created_at) VALUES (?,?,?,?,?,'confirmed',?)",id,input.slotId,user.id(),input.goals.trim(),input.timezone,System.currentTimeMillis());
         notifications.liveEvent(id,replacing.isEmpty()?"live_booked":"live_rescheduled",id,user.id());
@@ -132,8 +136,8 @@ public class LiveService {
      * Check overlapping confirmed classes across both student and teacher roles, excluding a booking
      * being replaced.
      */
-    private boolean busy(String user,long start,long end,String exclude) {
-        return db.exists("SELECT b.id FROM booking b JOIN live_slot s ON s.id=b.slot_id JOIN teacher t ON t.id=s.teacher_id WHERE b.status='confirmed' AND b.id<>? AND s.start_at<? AND s.end_at>? AND (b.student_id=? OR t.owner_id=?)",exclude,end,start,user,user);
+    private boolean busy(String user,long start,long end,String exclude,String teachingSlot) {
+        return db.exists("SELECT b.id FROM booking b JOIN live_slot s ON s.id=b.slot_id JOIN teacher t ON t.id=s.teacher_id WHERE b.status='confirmed' AND b.id<>? AND s.start_at<? AND s.end_at>? AND (b.student_id=? OR (t.owner_id=? AND s.id<>?))",exclude,end,start,user,user,teachingSlot);
     }
 
     /** Load participant-only bookings and attach their messages and private slot details. */
@@ -141,11 +145,29 @@ public class LiveService {
         var rows=db.list(BOOKINGS+" JOIN live_slot s ON s.id=b.slot_id JOIN teacher t ON t.id=s.teacher_id WHERE b.student_id=? OR t.owner_id=? ORDER BY s.start_at",user.id(),user.id());
         for(var row:rows) {
             row.put("messages",messages((String)row.get("id")));
-            var slot=db.one(SLOTS+" WHERE s.id=?",row.get("slotId"));
-            slot.put("meetingUrl",db.one("SELECT meeting_url FROM live_slot WHERE id=?",row.get("slotId")).get("meeting_url"));
-            row.put("slot",slot);
+            row.put("slot",slotDetails((String)row.get("slotId")));
         }
         return rows;
+    }
+
+    private Map<String,Object> slotDetails(String id) {
+        var slot=db.one(SLOTS+" WHERE s.id=?",id);
+        String url=db.one("SELECT meeting_url FROM live_slot WHERE id=?",id).get("meeting_url").toString();
+        slot.put("meetingUrl",url);
+        slot.put("classroomAvailable",!url.isBlank() || classroom.configured());
+        return slot;
+    }
+
+    public String join(String slotId,AuthService.User user) {
+        var slot=db.one("SELECT s.*,t.owner_id,t.subject FROM live_slot s JOIN teacher t ON t.id=s.teacher_id WHERE s.id=?",slotId);
+        boolean instructor=user.id().equals(slot.get("owner_id"));
+        Db.require(instructor || db.exists("SELECT id FROM booking WHERE slot_id=? AND student_id=? AND status='confirmed'",slotId,user.id()),FORBIDDEN,"A confirmed booking is required");
+        long now=System.currentTimeMillis();
+        long start=((Number)slot.get("start_at")).longValue(),end=((Number)slot.get("end_at")).longValue();
+        String url=slot.get("meeting_url").toString();
+        Db.require(!Boolean.TRUE.equals(slot.get("closed")) && now<end,CONFLICT,"This classroom is closed");
+        Db.require(!url.isBlank() || now>=start-Duration.ofMinutes(5).toMillis(),CONFLICT,"The classroom opens five minutes before the scheduled start");
+        return url.isBlank()?classroom.join(slotId,slot.get("subject").toString(),user,instructor,end-now):url;
     }
 
     /** Serialize cancellation and permit it only for a participant's upcoming confirmed booking. */
@@ -178,7 +200,12 @@ public class LiveService {
     }
 
     /** List teaching availability and meeting links only for the current instructor owner. */
-    public Object ownSlots(AuthService.User user) { catalog.instructor(user); return db.list("SELECT s.id,s.teacher_id AS \"teacherId\",s.start_at AS start,s.end_at AS \"end\",s.meeting_url AS \"meetingUrl\",s.closed FROM live_slot s JOIN teacher t ON t.id=s.teacher_id WHERE t.owner_id=? ORDER BY s.start_at",user.id()); }
+    public Object ownSlots(AuthService.User user) {
+        catalog.instructor(user);
+        var slots=db.list("SELECT s.id,s.teacher_id AS \"teacherId\",s.start_at AS start,s.end_at AS \"end\",s.meeting_url AS \"meetingUrl\",s.closed,s.capacity,s.capacity-"+BOOKED+" AS \"seatsRemaining\" FROM live_slot s JOIN teacher t ON t.id=s.teacher_id WHERE t.owner_id=? ORDER BY s.start_at",user.id());
+        for(var slot:slots) slot.put("classroomAvailable",!slot.get("meetingUrl").toString().isBlank() || classroom.configured());
+        return slots;
+    }
 
     /** Require teaching privileges and verify the principal owns the slot's teacher profile. */
     private void slotOwner(String id,AuthService.User user) { catalog.instructor(user); Db.require(db.exists("SELECT s.id FROM live_slot s JOIN teacher t ON t.id=s.teacher_id WHERE s.id=? AND t.owner_id=?",id,user.id()),FORBIDDEN,"Only the slot owner can change it"); }

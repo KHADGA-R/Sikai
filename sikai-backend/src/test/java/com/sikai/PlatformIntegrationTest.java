@@ -308,6 +308,33 @@ class PlatformIntegrationTest {
         request("POST","/api/live-classes/bookings/"+replacement+"/cancel",teacher,null,200);
         request("POST","/api/live-classes/bookings/"+replacement+"/messages",teacher,Map.of("text","Too late"),409);
     }
+    @Test void groupSeatsAndJoinAccessAreCheckedPerStudent() throws Exception {
+        String teacher=register("instructor"), first=register("student"), second=register("student"), third=register("student");
+        request("PUT","/api/live-classes/teacher",teacher,Map.of("subject","Music","bio","Group lessons","languages","Nepali"),200);
+        String room="https://meet.example.test/group";
+        long start=System.currentTimeMillis()+3_600_000;
+        String slot=request("POST","/api/live-classes/slots",teacher,
+            Map.of("start",start,"minutes",30,"meetingUrl",room,"capacity",2),201).path("id").asText();
+        String join="/api/live-classes/slots/"+slot+"/join";
+        var booking=Map.of("slotId",slot,"goals","","timezone","UTC");
+        request("POST",join,null,null,401);
+        request("POST",join,third,null,403);
+        String firstBooking=request("POST","/api/live-classes/bookings",first,booking,201).path("id").asText();
+        assertThat(request("GET","/api/live-classes/slots",null,null,200)).anySatisfy(row -> {
+            assertThat(row.path("id").asText()).isEqualTo(slot);
+            assertThat(row.path("seatsRemaining").asInt()).isEqualTo(1);
+            assertThat(row.has("meetingUrl")).isFalse();
+        });
+        request("POST","/api/live-classes/bookings",first,booking,409);
+        request("POST","/api/live-classes/bookings",second,booking,201);
+        request("POST","/api/live-classes/bookings",third,booking,409);
+        for(String token:List.of(teacher,first,second)){
+            assertThat(request("POST",join,token,null,200).path("url").asText()).isEqualTo(room);
+        }
+        request("POST","/api/live-classes/bookings/"+firstBooking+"/cancel",first,null,200);
+        request("POST",join,first,null,403);
+        request("POST","/api/live-classes/bookings",third,booking,201);
+    }
     @Test void concurrentBookingHasExactlyOneWinner() throws Exception {
         String teacher=register("instructor"),a=register("student"),b=register("student");
         request("PUT","/api/live-classes/teacher",teacher,Map.of("subject","Music","bio","Music teacher","languages","Nepali"),200);
