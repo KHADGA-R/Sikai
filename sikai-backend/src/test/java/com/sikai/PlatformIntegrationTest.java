@@ -380,6 +380,18 @@ class PlatformIntegrationTest {
         assertThat(partiallyErased.path("erasures").size()).isEqualTo(1);
         assertThat(partiallyErased.path("erasures").get(0).path("markId").asText()).isEqualTo(shape);
         assertThat(partiallyErased.path("erasures").get(0).path("radius").asInt()).isEqualTo(18);
+        String note=request("POST",board+"/notes",first,Map.of("slideId",slide,"color","pink"),200).path("id").asText();
+        String notePath=board+"/notes/"+note;
+        request("PATCH",notePath,second,Map.of("text","Other student's edit"),404);
+        request("PATCH",notePath,first,Map.of("text","Practice the second line"),200);
+        request("PATCH",notePath,first,Map.of("bounds",Map.of("x",200,"y",100,"width",360,"height",320)),200);
+        var sharedNote=request("GET",board+"?slideId="+slide,teacher,null,200).path("notes").get(0);
+        assertThat(sharedNote.path("text").asText()).isEqualTo("Practice the second line");
+        assertThat(sharedNote.path("color").asText()).isEqualTo("pink");
+        assertThat(sharedNote.path("x").asInt()).isEqualTo(200);
+        assertThat(sharedNote.path("width").asInt()).isEqualTo(360);
+        assertThat(request("GET",board,teacher,null,200).path("notes").size()).isZero();
+        request("DELETE",notePath,first,null,200);
         request("DELETE",board+"/marks/"+shape,first,null,200);
         assertThat(request("GET",board+"?slideId="+slide,teacher,null,200).path("marks").size()).isEqualTo(1);
     }

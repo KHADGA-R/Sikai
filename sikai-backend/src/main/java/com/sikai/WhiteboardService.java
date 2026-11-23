@@ -37,9 +37,15 @@ public class WhiteboardService {
             FROM live_board_erase e JOIN live_board_mark m ON m.id=e.mark_id
             WHERE m.slot_id=? AND m.slide_id=?
             """, slotId, slideId);
+        var notes = db.list("""
+            SELECT n.id,n.author_id AS "authorId",u.name AS "authorName",n.color,n.note_text AS "text",
+                   n.left_pos AS x,n.top_pos AS y,n.note_width AS width,n.note_height AS height
+            FROM live_board_note n JOIN app_user u ON u.id=n.author_id
+            WHERE n.slot_id=? AND n.slide_id=? ORDER BY n.revision
+            """, slotId, slideId);
         return Map.of("revision", current, "subject", slot.get("subject"), "instructor", user.id().equals(slot.get("owner_id")),
             "instructorId", slot.get("owner_id"), "meetingUrl", slot.get("meeting_url"), "end", slot.get("end_at"),
-            "slides", slides, "marks", marks, "erasures", erasures);
+            "slides", slides, "marks", marks, "erasures", erasures, "notes", notes);
     }
 
     public Object image(String slotId, String slideId, AuthService.User user) {
@@ -107,6 +113,45 @@ public class WhiteboardService {
                     id, gestureId, points, radius);
             }
         }
+    }
+
+    @Transactional public Object addNote(String slotId, WhiteboardController.NoteInput input, AuthService.User user) {
+        access(slotId, user);
+        requireSlide(slotId, input.slideId());
+        long revision = nextRevision(slotId);
+        int count = ((Number) db.one("SELECT COUNT(*) AS total FROM live_board_note WHERE slot_id=? AND slide_id=?",
+            slotId, input.slideId()).get("total")).intValue();
+        Db.require(count < 50, CONFLICT, "This slide already has 50 sticky notes");
+        int offset = 60 + (count % 8) * 25;
+        String id = Db.id();
+        db.update("""
+            INSERT INTO live_board_note(id,slot_id,slide_id,author_id,color,note_text,left_pos,top_pos,note_width,note_height,revision)
+            VALUES (?,?,?,?,?,'',?,?,250,275,?)
+            """, id, slotId, input.slideId(), user.id(), input.color(), offset, offset, revision);
+        return Map.of("id", id);
+    }
+
+    @Transactional public void updateNote(String slotId, String noteId, WhiteboardController.NoteUpdate input, AuthService.User user) {
+        access(slotId, user);
+        nextRevision(slotId);
+        var bounds = input.bounds();
+        Db.require(input.text() != null || bounds != null, BAD_REQUEST, "Enter a note change");
+        Db.require(bounds == null || bounds.x() + bounds.width() <= 1000 && bounds.y() + bounds.height() <= 1000,
+            BAD_REQUEST, "Keep the note inside the whiteboard");
+        int updated = db.update("""
+            UPDATE live_board_note SET note_text=COALESCE(?,note_text),left_pos=COALESCE(?,left_pos),
+                top_pos=COALESCE(?,top_pos),note_width=COALESCE(?,note_width),note_height=COALESCE(?,note_height)
+            WHERE slot_id=? AND id=? AND author_id=?
+            """, input.text(), bounds == null ? null : bounds.x(), bounds == null ? null : bounds.y(),
+            bounds == null ? null : bounds.width(), bounds == null ? null : bounds.height(), slotId, noteId, user.id());
+        Db.require(updated == 1, NOT_FOUND, "Your sticky note was not found");
+    }
+
+    @Transactional public void deleteNote(String slotId, String noteId, AuthService.User user) {
+        access(slotId, user);
+        nextRevision(slotId);
+        Db.require(db.update("DELETE FROM live_board_note WHERE slot_id=? AND id=? AND author_id=?", slotId, noteId, user.id()) == 1,
+            NOT_FOUND, "Your sticky note was not found");
     }
 
     private Map<String,Object> access(String slotId, AuthService.User user) {

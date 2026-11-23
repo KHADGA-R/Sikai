@@ -3,6 +3,8 @@ import { ActivatedRoute, RouterLink } from '@angular/router';
 import { ApiError, ApiService } from '../core/api.service';
 import { AuthService } from '../core/auth.service';
 import { safeMeetingUrl } from '../core/live-classes';
+import { NotePatch, StickyNote, WhiteboardNoteComponent } from './whiteboard-note.component';
+import { ThemeIconComponent } from '../shared/theme-icon.component';
 
 type Shape = 'line' | 'rectangle' | 'ellipse' | 'circle' | 'arrow';
 type Tool = 'pen' | 'highlighter' | 'text' | Shape;
@@ -21,11 +23,12 @@ interface Board {
   slides: Slide[];
   marks: (Omit<Mark, 'points'> & { points: string })[];
   erasures?: { markId: string; gestureId: string; points: string; radius?: number }[];
+  notes?: StickyNote[];
 }
 
 @Component({
   standalone: true,
-  imports: [RouterLink],
+  imports: [RouterLink, WhiteboardNoteComponent, ThemeIconComponent],
   templateUrl: './whiteboard.component.html',
   styleUrl: './whiteboard.component.css',
 })
@@ -40,12 +43,18 @@ export class WhiteboardComponent {
   readonly image = signal('');
   readonly now = signal(Date.now());
   readonly tool = signal<Tool | 'eraser'>('pen');
-  readonly shapes: readonly { tool: Shape; label: string; icon: string }[] = [
-    { tool: 'line', label: 'Line', icon: '╱' },
-    { tool: 'rectangle', label: 'Rectangle', icon: '▭' },
-    { tool: 'ellipse', label: 'Ellipse', icon: '⬭' },
-    { tool: 'circle', label: 'Circle', icon: '○' },
-    { tool: 'arrow', label: 'Arrow', icon: '↗' },
+  readonly drawingTools = [
+    { tool: 'pen', label: 'Pen' },
+    { tool: 'highlighter', label: 'Highlighter' },
+    { tool: 'text', label: 'Text' },
+    { tool: 'eraser', label: 'Eraser' },
+  ] as const;
+  readonly shapes: readonly { tool: Shape; label: string; glyph: string }[] = [
+    { tool: 'line', label: 'Line', glyph: '╱' },
+    { tool: 'rectangle', label: 'Rectangle', glyph: '▭' },
+    { tool: 'ellipse', label: 'Ellipse', glyph: '⬭' },
+    { tool: 'circle', label: 'Circle', glyph: '○' },
+    { tool: 'arrow', label: 'Arrow', glyph: '↗' },
   ];
   readonly activeShape = computed(() => this.shapes.find(shape => shape.tool === this.tool())?.tool ?? '');
   readonly strokeStyles = [
@@ -71,9 +80,12 @@ export class WhiteboardComponent {
   private revision = -1;
   private requestId = 0;
   private pendingRead = false;
+  private pendingNoteWrites = 0;
+  private noteWrites = Promise.resolve();
   private pointer: number | undefined;
   readonly userId = computed(() => this.auth.user()?.id);
   readonly slides = computed(() => [this.blank, ...(this.board()?.slides ?? [])]);
+  readonly notes = computed(() => this.board()?.notes ?? []);
   readonly marks = computed<Mark[]>(() => this.board()?.marks.map(mark => ({
     ...mark, points: JSON.parse(mark.points) as Point[],
   })) ?? []);
@@ -120,7 +132,7 @@ export class WhiteboardComponent {
     try {
       const result = await this.api.request<Board | { unchanged: true }>('GET',
         this.resource + '?slideId=' + encodeURIComponent(slide) + '&revision=' + (force ? -1 : this.revision));
-      if (id !== this.requestId) return;
+      if (id !== this.requestId || (!force && this.pendingNoteWrites)) return;
       this.syncError.set('');
       if ('unchanged' in result) return;
       this.revision = result.revision;
@@ -147,7 +159,7 @@ export class WhiteboardComponent {
     this.selected.set(slide);
     this.layer.set('all');
     this.image.set('');
-    this.board.update(board => board && { ...board, marks: [] });
+    this.board.update(board => board && { ...board, marks: [], erasures: [], notes: [] });
     await Promise.all([this.refresh(true), this.loadImage(slide)]);
   }
 
@@ -359,6 +371,48 @@ export class WhiteboardComponent {
 
   private async removeMark(id: string): Promise<void> {
     await this.write(async () => { await this.api.request('DELETE', this.resource + '/marks/' + id); });
+  }
+
+  addNote(color: StickyNote['color']): void {
+    const slideId = this.selected().id;
+    this.queueNoteWrite(async () => {
+      await this.api.request('POST', this.resource + '/notes', { slideId, color });
+    });
+  }
+
+  changeNote(id: string, patch: NotePatch): void {
+    this.board.update(board => board && {
+      ...board,
+      notes: board.notes?.map(note => note.id === id
+        ? { ...note, ...patch.bounds, text: patch.text ?? note.text }
+        : note),
+    });
+    this.queueNoteWrite(async () => {
+      await this.api.request('PATCH', this.resource + '/notes/' + id, patch);
+    });
+  }
+
+  addSelectedNote(select: HTMLSelectElement): void {
+    const color = select.value;
+    if (color === 'yellow' || color === 'pink') this.addNote(color);
+    select.value = '';
+  }
+
+  deleteNote(id: string): void {
+    this.queueNoteWrite(async () => {
+      await this.api.request('DELETE', this.resource + '/notes/' + id);
+    });
+  }
+
+  private queueNoteWrite(action: () => Promise<void>): void {
+    this.pendingNoteWrites++;
+    this.error.set('');
+    this.noteWrites = this.noteWrites.then(action).catch(error => {
+      this.error.set(this.message(error));
+    }).finally(async () => {
+      this.pendingNoteWrites--;
+      if (!this.pendingNoteWrites) await this.refresh(true);
+    });
   }
 
   async addSlide(file?: File): Promise<void> {

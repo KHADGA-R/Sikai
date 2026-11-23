@@ -27,6 +27,11 @@ public class WhiteboardController {
                              @NotEmpty @Size(max=500) List<@NotBlank @Size(max=36) String> markIds,
                              @NotEmpty @Size(max=180) List<@NotNull @Valid Point> points,
                              @Min(6) @Max(30) Integer radius) {}
+    public record NoteInput(@NotBlank @Size(max=36) String slideId,
+                            @NotNull @Pattern(regexp="yellow|pink") String color) {}
+    public record NoteBounds(@Min(0) @Max(1000) int x, @Min(0) @Max(1000) int y,
+                             @Min(120) @Max(1000) int width, @Min(140) @Max(1000) int height) {}
+    public record NoteUpdate(@Size(max=1500) String text, @Valid NoteBounds bounds) {}
 
     private final WhiteboardService board;
 
@@ -67,6 +72,24 @@ public class WhiteboardController {
     public void erase(@PathVariable String slotId, @Valid @RequestBody EraseInput input,
         @AuthenticationPrincipal AuthService.User user) {
         board.erase(slotId, input, user);
+    }
+
+    @PostMapping("/notes")
+    public Object addNote(@PathVariable String slotId, @Valid @RequestBody NoteInput input,
+        @AuthenticationPrincipal AuthService.User user) {
+        return board.addNote(slotId, input, user);
+    }
+
+    @PatchMapping("/notes/{noteId}")
+    public void updateNote(@PathVariable String slotId, @PathVariable String noteId,
+        @Valid @RequestBody NoteUpdate input, @AuthenticationPrincipal AuthService.User user) {
+        board.updateNote(slotId, noteId, input, user);
+    }
+
+    @DeleteMapping("/notes/{noteId}")
+    public void deleteNote(@PathVariable String slotId, @PathVariable String noteId,
+        @AuthenticationPrincipal AuthService.User user) {
+        board.deleteNote(slotId, noteId, user);
     }
 
     private ResponseEntity<Object> privateResponse(Object body) {

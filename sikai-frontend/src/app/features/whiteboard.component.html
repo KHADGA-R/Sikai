@@ -35,49 +35,68 @@
 
       <div class="panel workspace">
         <div class="tools" role="group" aria-label="Whiteboard tools">
-          <div class="drawing-tools">
-            <button type="button" [attr.aria-pressed]="tool() === 'pen'" (click)="setTool('pen')">Pen</button>
-            <button type="button" [attr.aria-pressed]="tool() === 'highlighter'" (click)="setTool('highlighter')">Highlighter</button>
-            <button type="button" [attr.aria-pressed]="tool() === 'text'" (click)="setTool('text')">Text</button>
-            <button type="button" [attr.aria-pressed]="tool() === 'eraser'" (click)="setTool('eraser')">Eraser</button>
+          <div class="drawing-tools" role="group" aria-label="Drawing tools">
+            @for (item of drawingTools; track item.tool) {
+              <button type="button" class="icon-button" [attr.title]="item.label" [attr.aria-label]="item.label"
+                [attr.aria-pressed]="tool() === item.tool" (click)="setTool(item.tool)">
+                <app-theme-icon [name]="item.tool" />
+              </button>
+            }
           </div>
-          <label class="shape-control">
-            Shape
-            <select [value]="activeShape()" (change)="selectShape($any($event.target).value)">
-              <option value="" disabled selected>Choose shape</option>
+          <label class="tool-select" title="Shape">
+            <app-theme-icon [name]="activeShape() || 'shapes'" />
+            <select aria-label="Shape" [value]="activeShape()" (change)="selectShape($any($event.target).value)">
+              <option value="" disabled selected>Shape</option>
               @for (shape of shapes; track shape.tool) {
-                <option [value]="shape.tool" [attr.aria-label]="shape.label">{{ shape.icon }} {{ shape.label }}</option>
+                <option [value]="shape.tool" [attr.aria-label]="shape.label">{{ shape.glyph }} {{ shape.label }}</option>
               }
             </select>
           </label>
-          @if (activeShape()) {
-            <div class="stroke-options" role="group" aria-label="Shape stroke style">
-              @for (style of strokeStyles; track style.value) {
-                <button type="button" [attr.aria-pressed]="strokeStyle() === style.value" (click)="strokeStyle.set(style.value)">
-                  <span class="stroke-sample" [style.border-top-style]="style.value" aria-hidden="true"></span>{{ style.label }}
-                </button>
-              }
-            </div>
-          } @else if (tool() === 'pen') {
-            <div class="stroke-options" role="group" aria-label="Pen tip">
-              @for (tip of penTips; track tip.width) {
-                <button type="button" [attr.aria-pressed]="penWidth() === tip.width" (click)="penWidth.set(tip.width)">
-                  <span class="tip-sample" [style.--tip-size]="tip.width + 'px'" aria-hidden="true"></span>{{ tip.label }}
-                </button>
-              }
-            </div>
-          }
-          <label class="color-control">Color <input type="color" [value]="color()" [disabled]="tool() === 'eraser'" (input)="color.set($any($event.target).value)" /></label>
-          <label class="layer-control">Show marks
-            <select [value]="layer()" (change)="layer.set($any($event.target).value)">
+          <label class="tool-select" title="Add a sticky note">
+            <app-theme-icon name="sticky" />
+            <select #noteColor aria-label="Sticky note" (change)="addSelectedNote(noteColor)">
+              <option value="" disabled selected>Sticky note</option>
+              <option value="yellow">Yellow</option>
+              <option value="pink">Pink</option>
+            </select>
+          </label>
+          <label class="tool-select" title="Show marks by participant">
+            <app-theme-icon name="eye" />
+            <select aria-label="Show marks" [value]="layer()" (change)="layer.set($any($event.target).value)">
               <option value="all">Everyone</option>
               @for (person of participants(); track person[0]) {
                 <option [value]="person[0]">{{ person[1] }}{{ person[0] === userId() ? ' (you)' : person[0] === room.instructorId ? ' (teacher)' : '' }}</option>
               }
             </select>
           </label>
-          <button type="button" class="button outline undo" [disabled]="!lastOwnMark() || busy()" (click)="undo()">Undo my mark</button>
+          <button type="button" class="icon-button undo" aria-label="Undo my mark" title="Undo my mark"
+            [disabled]="!lastOwnMark() || busy()" (click)="undo()"><app-theme-icon name="undo" /></button>
         </div>
+        @if (tool() !== 'eraser') {
+          <div class="tool-settings" role="group" aria-label="Selected tool settings">
+            <label class="color-control" title="Color">
+              <app-theme-icon name="palette" />
+              <input aria-label="Color" type="color" [value]="color()" (input)="color.set($any($event.target).value)" />
+            </label>
+            @if (activeShape()) {
+              <div class="stroke-options" role="group" aria-label="Shape stroke style">
+                @for (style of strokeStyles; track style.value) {
+                  <button type="button" [attr.aria-pressed]="strokeStyle() === style.value" (click)="strokeStyle.set(style.value)">
+                    <span class="stroke-sample" [style.border-top-style]="style.value" aria-hidden="true"></span>{{ style.label }}
+                  </button>
+                }
+              </div>
+            } @else if (tool() === 'pen') {
+              <div class="stroke-options" role="group" aria-label="Pen tip">
+                @for (tip of penTips; track tip.width) {
+                  <button type="button" [attr.aria-pressed]="penWidth() === tip.width" (click)="penWidth.set(tip.width)">
+                    <span class="tip-sample" [style.--tip-size]="tip.width + 'px'" aria-hidden="true"></span>{{ tip.label }}
+                  </button>
+                }
+              </div>
+            }
+          </div>
+        }
         @if (tool() === 'text') {
           <label class="text-control">Text to place
             <input type="text" [value]="text()" (input)="text.set($any($event.target).value)" maxlength="200" placeholder="Type here, then tap the board" />
@@ -130,6 +149,10 @@
               <circle class="eraser-cursor" [attr.cx]="cursor.x * 1000" [attr.cy]="cursor.y * 562" [attr.r]="eraserRadius()" aria-hidden="true" />
             }
           </svg>
+          @for (note of notes(); track note.id) {
+            <app-whiteboard-note [note]="note" [editable]="note.authorId === userId()"
+              (changed)="changeNote(note.id, $event)" (removed)="deleteNote(note.id)" />
+          }
         </div>
         <p class="board-note">Marks are shared with the class. Use Show marks to isolate a participant’s annotations.</p>
       </div>

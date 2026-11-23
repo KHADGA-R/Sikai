@@ -121,6 +121,8 @@ Choose **Open whiteboard** from a confirmed booking to share a board with the in
 
 With **Eraser** selected, scroll up over the board to increase its size or down to decrease it.
 
+Choose **Yellow** or **Pink** from **Sticky note** to add a note to the selected slide. Type directly in it, drag its top edge to move it, or drag the bottom-right handle to resize it. Notes are shared with the class. Each participant can edit or delete their own notes.
+
 When a saved external meeting link is available, **Start live class** or **Join live class** opens the video separately and loads the whiteboard in the original Sikai tab. To use a separate desktop window, right-click **Open video call** on the whiteboard and choose **Open link in new window**. The instructor and confirmed students can revisit their class board after the scheduled end.
 
 ## Configuration

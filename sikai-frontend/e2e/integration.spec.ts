@@ -216,6 +216,33 @@ test('live teacher availability, student booking, messaging, meeting link and ca
     const sharedCircle = page.locator('.surface [data-tool=circle]');
     await expect(sharedCircle).toHaveAttribute('d', / A /);
     await expect(sharedCircle).toHaveAttribute('stroke-dasharray', '12 8');
+    await student.getByRole('combobox', { name: 'Sticky note' }).selectOption('pink');
+    const studentNote = student.locator('app-whiteboard-note.pink');
+    const sharedNote = page.locator('app-whiteboard-note.pink');
+    await studentNote.getByRole('textbox').fill('Practice the second line');
+    await expect(sharedNote.getByRole('textbox')).toHaveValue('Practice the second line');
+    await expect(sharedNote.getByRole('textbox')).not.toBeEditable();
+    await studentNote.getByRole('button', { name: 'Move sticky note' }).scrollIntoViewIfNeeded();
+    const handle = (await studentNote.getByRole('button', { name: 'Move sticky note' }).boundingBox())!;
+    await student.mouse.move(handle.x + 12, handle.y + 10);
+    await student.mouse.down();
+    await student.mouse.move(handle.x + 85, handle.y + 50, { steps: 4 });
+    await student.mouse.up();
+    const left = await studentNote.evaluate(note => note.style.left);
+    expect(left).not.toBe('6%');
+    await expect.poll(() => sharedNote.evaluate(note => note.style.left)).toBe(left);
+    const resizeHandle = studentNote.getByRole('button', { name: 'Resize sticky note' });
+    await resizeHandle.scrollIntoViewIfNeeded();
+    const resize = (await resizeHandle.boundingBox())!;
+    await student.mouse.move(resize.x + 10, resize.y + 8);
+    await student.mouse.down();
+    await student.mouse.move(resize.x + 100, resize.y + 60, { steps: 4 });
+    await student.mouse.up();
+    await expect.poll(() => studentNote.evaluate(note => note.style.width)).not.toBe('25%');
+    const width = await studentNote.evaluate(note => note.style.width);
+    await expect.poll(() => sharedNote.evaluate(note => note.style.width)).toBe(width);
+    await page.getByRole('combobox', { name: 'Sticky note' }).selectOption('yellow');
+    await expect(student.locator('app-whiteboard-note:not(.pink)')).toHaveCount(1);
     await student.getByRole('link', { name: 'Back to live classes' }).click();
     await student.route('**/api/live-classes/slots/*/join', route => route.fulfill({
       status: 404, json: { message: 'Endpoint not found' },
