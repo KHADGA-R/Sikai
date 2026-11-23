@@ -1,0 +1,140 @@
+<section class="container section whiteboard">
+  <header class="board-heading">
+    <div>
+      <a class="back" routerLink="/live-classes" [queryParams]="{view: 'bookings'}">← Back to live classes</a>
+      <h1>Class whiteboard</h1>
+      @if (board(); as room) { <p>{{ room.subject }}</p> }
+    </div>
+    @if (meetingLink(); as url) {
+      <a class="button outline" [href]="url" target="_blank" rel="noopener noreferrer">Open video call ↗</a>
+    }
+  </header>
+
+  @if (error() || syncError(); as problem) { <p class="error-note" role="alert">{{ problem }}</p> }
+
+  @if (board(); as room) {
+    <div class="board-layout">
+      <aside class="panel slides">
+        <h2>Slides</h2>
+        <nav aria-label="Whiteboard slides">
+          @for (slide of slides(); track slide.id) {
+            <button type="button" [attr.aria-current]="selected().id === slide.id ? 'page' : null"
+              [disabled]="busy()" (click)="select(slide)">{{ slide.title }}</button>
+          }
+        </nav>
+        @if (room.instructor) {
+          <div class="slide-editor">
+            <label>Slide title <input type="text" maxlength="100" [value]="title()" (input)="title.set($any($event.target).value)" /></label>
+            <button type="button" class="button outline" [disabled]="busy() || room.slides.length >= 12" (click)="addSlide()">Add blank slide</button>
+            <button type="button" class="button outline" [disabled]="busy() || room.slides.length >= 12" (click)="upload.click()">Upload slide image</button>
+            <input #upload type="file" hidden accept="image/png,image/jpeg,image/webp"
+              (change)="upload.files?.length && addSlide(upload.files?.[0]); upload.value = ''" />
+          </div>
+        }
+      </aside>
+
+      <div class="panel workspace">
+        <div class="tools" role="group" aria-label="Whiteboard tools">
+          <div class="drawing-tools">
+            <button type="button" [attr.aria-pressed]="tool() === 'pen'" (click)="setTool('pen')">Pen</button>
+            <button type="button" [attr.aria-pressed]="tool() === 'highlighter'" (click)="setTool('highlighter')">Highlighter</button>
+            <button type="button" [attr.aria-pressed]="tool() === 'text'" (click)="setTool('text')">Text</button>
+            <button type="button" [attr.aria-pressed]="tool() === 'eraser'" (click)="setTool('eraser')">Eraser</button>
+          </div>
+          <label class="shape-control">
+            Shape
+            <select [value]="activeShape()" (change)="selectShape($any($event.target).value)">
+              <option value="" disabled selected>Choose shape</option>
+              @for (shape of shapes; track shape.tool) {
+                <option [value]="shape.tool" [attr.aria-label]="shape.label">{{ shape.icon }} {{ shape.label }}</option>
+              }
+            </select>
+          </label>
+          @if (activeShape()) {
+            <div class="stroke-options" role="group" aria-label="Shape stroke style">
+              @for (style of strokeStyles; track style.value) {
+                <button type="button" [attr.aria-pressed]="strokeStyle() === style.value" (click)="strokeStyle.set(style.value)">
+                  <span class="stroke-sample" [style.border-top-style]="style.value" aria-hidden="true"></span>{{ style.label }}
+                </button>
+              }
+            </div>
+          } @else if (tool() === 'pen') {
+            <div class="stroke-options" role="group" aria-label="Pen tip">
+              @for (tip of penTips; track tip.width) {
+                <button type="button" [attr.aria-pressed]="penWidth() === tip.width" (click)="penWidth.set(tip.width)">
+                  <span class="tip-sample" [style.--tip-size]="tip.width + 'px'" aria-hidden="true"></span>{{ tip.label }}
+                </button>
+              }
+            </div>
+          }
+          <label class="color-control">Color <input type="color" [value]="color()" [disabled]="tool() === 'eraser'" (input)="color.set($any($event.target).value)" /></label>
+          <label class="layer-control">Show marks
+            <select [value]="layer()" (change)="layer.set($any($event.target).value)">
+              <option value="all">Everyone</option>
+              @for (person of participants(); track person[0]) {
+                <option [value]="person[0]">{{ person[1] }}{{ person[0] === userId() ? ' (you)' : person[0] === room.instructorId ? ' (teacher)' : '' }}</option>
+              }
+            </select>
+          </label>
+          <button type="button" class="button outline undo" [disabled]="!lastOwnMark() || busy()" (click)="undo()">Undo my mark</button>
+        </div>
+        @if (tool() === 'text') {
+          <label class="text-control">Text to place
+            <input type="text" [value]="text()" (input)="text.set($any($event.target).value)" maxlength="200" placeholder="Type here, then tap the board" />
+          </label>
+        }
+        @if (tool() === 'eraser') {
+          <p class="tool-note">Drag to erase parts of your marks. Scroll up over the board for a bigger eraser or down for a smaller one.</p>
+        }
+        @if (activeShape() === 'circle') {
+          <p class="tool-note">Drag from the center to the edge to draw a circle.</p>
+        }
+        <div class="surface">
+          @if (image(); as background) { <img [src]="background" [alt]="selected().title" /> }
+          <svg #surface viewBox="0 0 1000 562" preserveAspectRatio="none" [class.erasing]="tool() === 'eraser'" [attr.aria-label]="selected().title + ' drawing surface'"
+            (pointerdown)="startStroke($event, surface)" (pointermove)="moveStroke($event, surface)"
+            (pointerup)="finishStroke($event, surface)" (pointerleave)="eraserCursor.set(null)" (wheel)="resizeEraser($event, surface)"
+            (pointercancel)="cancelPointer($event)" (lostpointercapture)="cancelPointer($event)">
+            @for (mark of drawings(); track mark.id) {
+              @let ownMark = mark.authorId === userId();
+              @let savedMask = masks().get(mark.id) ?? [];
+              @let preview = ownMark ? eraserPreview() : null;
+              @let masked = savedMask.length > 0 || preview;
+              @if (masked) {
+                <defs>
+                  <mask [attr.id]="'erase-' + mark.id" maskUnits="userSpaceOnUse" x="0" y="0" width="1000" height="562">
+                    <rect width="1000" height="562" fill="white" />
+                    @for (mask of savedMask; track $index) {
+                      <path [attr.d]="mask.path" class="erase-mask" [attr.stroke-width]="mask.radius * 2" />
+                    }
+                    @if (preview) {
+                      <path [attr.d]="preview" class="erase-mask" [attr.stroke-width]="eraserStrokeRadius() * 2" />
+                    }
+                  </mask>
+                </defs>
+              }
+              <g [attr.data-erase-id]="ownMark ? mark.id : null" [attr.mask]="masked ? 'url(#erase-' + mark.id + ')' : null">
+                <title>{{ mark.authorName }}</title>
+                @if (mark.tool === 'text') {
+                  <text [attr.x]="mark.points[0].x * 1000" [attr.y]="mark.points[0].y * 562"
+                    [attr.fill]="mark.color" dominant-baseline="hanging" font-size="24">{{ mark.label }}</text>
+                } @else {
+                  @let path = outline(mark);
+                  <path class="mark-stroke" [attr.data-tool]="mark.tool" [attr.d]="path" fill="none" [attr.stroke]="mark.color"
+                    [attr.stroke-width]="width(mark)" [attr.stroke-dasharray]="dashArray(mark)"
+                    [attr.opacity]="mark.tool === 'highlighter' ? 0.45 : 1" stroke-linecap="round" stroke-linejoin="round" />
+                }
+              </g>
+            }
+            @if (tool() === 'eraser' && eraserCursor(); as cursor) {
+              <circle class="eraser-cursor" [attr.cx]="cursor.x * 1000" [attr.cy]="cursor.y * 562" [attr.r]="eraserRadius()" aria-hidden="true" />
+            }
+          </svg>
+        </div>
+        <p class="board-note">Marks are shared with the class. Use Show marks to isolate a participant’s annotations.</p>
+      </div>
+    </div>
+  } @else if (!error() && !syncError()) {
+    <p role="status">Loading classroom whiteboard…</p>
+  }
+</section>

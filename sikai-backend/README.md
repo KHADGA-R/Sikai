@@ -113,7 +113,15 @@ mvn spring-boot:run
 
 Use an API-enabled BigBlueButton server and its shared secret. Keep the secret on the backend. Leave the meeting link blank when publishing a slot to use BigBlueButton. An explicit HTTPS meeting link continues to work for existing slots or external meetings. BigBlueButton opens in the browser with the instructor as moderator and the confirmed students as viewers. Sikai uses one meeting ID per slot and disables recording when it creates the room.
 
-To try the flow locally, start the Angular app and backend, publish a two-seat slot starting within five minutes, and book it from two student accounts in separate browser sessions. Both students should enter the instructor's room, and a third student should see that the class is full. Without a running BigBlueButton instance, an HTTPS meeting link can exercise the booking and join flow. A real BigBlueButton server is required to test classroom media and whiteboard tools.
+To try the flow locally, start the Angular app and backend, publish a two-seat slot starting within five minutes, and book it from two student accounts in separate browser sessions. Both students should enter the instructor's room, and a third student should see that the class is full. An HTTPS meeting link can exercise the external booking and join flow. A running BigBlueButton server is required to test its own classroom media and teaching tools.
+
+### Sikai class whiteboard
+
+Choose **Open whiteboard** from a confirmed booking to share a board with the instructor and other booked students. The instructor can add blank slides and upload PNG, JPEG or WebP slide images up to 2 MB. To use PowerPoint or PDF slides, export the desired pages as images first. Participants can draw, highlight, place typed text, and add lines, rectangles, ellipses, circles, or arrows. Choose a solid, dashed, or dotted outline for any shape, or a fine, medium, or bold pen tip for freehand writing. Marks are saved per slide and attributed by author. Use **Show marks** to display one person's annotations. Drag **Eraser** over the parts of your marks you want to remove, or use **Undo my mark** to remove your latest mark on that slide.
+
+With **Eraser** selected, scroll up over the board to increase its size or down to decrease it.
+
+When a saved external meeting link is available, **Start live class** or **Join live class** opens the video separately and loads the whiteboard in the original Sikai tab. To use a separate desktop window, right-click **Open video call** on the whiteboard and choose **Open link in new window**. The instructor and confirmed students can revisit their class board after the scheduled end.
 
 ## Configuration
 

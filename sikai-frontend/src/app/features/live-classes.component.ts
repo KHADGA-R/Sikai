@@ -1,4 +1,5 @@
 import { Component, OnDestroy, computed, effect, inject, signal } from '@angular/core';
+import { NgTemplateOutlet } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { AuthService } from '../core/auth.service';
@@ -6,7 +7,7 @@ import { CATEGORY_NAMES } from '../core/categories';
 import { LiveClassesService } from '../core/live-classes.service';
 import { Booking, LiveSlot, safeMeetingUrl } from '../core/live-classes';
 
-@Component({ standalone: true, imports: [FormsModule, RouterLink], templateUrl: './live-classes.component.html', styleUrl: './live-classes.component.css' })
+@Component({ standalone: true, imports: [FormsModule, RouterLink, NgTemplateOutlet], templateUrl: './live-classes.component.html', styleUrl: './live-classes.component.css' })
 export class LiveClassesComponent implements OnDestroy {
   readonly live = inject(LiveClassesService); readonly auth = inject(AuthService); private readonly router = inject(Router); private readonly route = inject(ActivatedRoute);
   readonly aboutPage = this.route.snapshot.data['view'] === 'profile';
@@ -38,15 +39,20 @@ export class LiveClassesComponent implements OnDestroy {
 
   canJoin(slot: LiveSlot): boolean {
     return !slot.closed && this.now() < slot.end &&
-      (!!slot.meetingUrl || (!!slot.classroomAvailable && this.now() >= slot.start - 5 * 60_000));
+      (!!this.externalMeeting(slot) || (!slot.meetingUrl && !!slot.classroomAvailable && this.now() >= slot.start - 5 * 60_000));
+  }
+
+  externalMeeting(slot: LiveSlot): string {
+    return safeMeetingUrl(slot.meetingUrl) ? slot.meetingUrl : '';
+  }
+
+  openBoardAfterMeetingClick(event: MouseEvent, slot: LiveSlot): void {
+    if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+    void this.router.navigate(['/live-classes', slot.id, 'whiteboard']);
   }
 
   async join(slot: LiveSlot): Promise<void> {
     await this.action(async () => {
-      if (slot.meetingUrl && safeMeetingUrl(slot.meetingUrl)) {
-        window.location.assign(slot.meetingUrl);
-        return;
-      }
       const { url } = await this.live.joinSlot(slot.id);
       window.location.assign(url);
     }, 'Opening classroom...');
@@ -65,6 +71,7 @@ export class LiveClassesComponent implements OnDestroy {
   constructor() {
     const params = this.route.snapshot.queryParamMap;
     const view = this.aboutPage ? 'profile' : params.get('view');
+    if (view === 'bookings') this.tab.set('bookings');
     if ((view === 'teach' || view === 'profile') && this.auth.isInstructor()) this.tab.set(view);
     if (view === 'profile' && !this.aboutPage && this.auth.isInstructor()) {
       void this.router.navigateByUrl('/instructor/about', { replaceUrl: true });

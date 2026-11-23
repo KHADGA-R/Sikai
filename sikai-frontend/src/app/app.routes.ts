@@ -16,6 +16,7 @@ export const routes: Routes = [
   { path: 'completed-courses', canActivate: [authGuard], loadComponent: () => import('./features/learning-dashboard.component').then(m => m.LearningDashboardComponent), title: 'Completed Courses | Sikai' },
   { path: 'my-achievements', canActivate: [authGuard], loadComponent: () => import('./features/learning-dashboard.component').then(m => m.LearningDashboardComponent), title: 'My Achievements | Sikai' },
   { path: 'live-classes', loadComponent: () => import('./features/live-classes.component').then(m => m.LiveClassesComponent), title: 'Live Classes | Sikai' },
+  { path: 'live-classes/:slotId/whiteboard', canActivate: [authGuard], loadComponent: () => import('./features/whiteboard.component').then(m => m.WhiteboardComponent), title: 'Class Whiteboard | Sikai' },
   { path: 'community', loadComponent: () => import('./features/discover.component').then(m => m.DiscoverComponent), title: 'Community | Sikai' },
   { path: 'about', loadComponent: siteInformation, title: 'About Us | Sikai' },
   { path: 'careers', loadComponent: siteInformation, title: 'Careers | Sikai' },

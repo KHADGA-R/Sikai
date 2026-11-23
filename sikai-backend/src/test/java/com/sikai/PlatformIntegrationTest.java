@@ -335,6 +335,54 @@ class PlatformIntegrationTest {
         request("POST",join,first,null,403);
         request("POST","/api/live-classes/bookings",third,booking,201);
     }
+    @Test void whiteboardSharesSlidesAndKeepsMarksByAuthor() throws Exception {
+        String teacher=register("instructor"), first=register("student"), second=register("student"), outsider=register("student");
+        request("PUT","/api/live-classes/teacher",teacher,Map.of("subject","Music","bio","Group lessons","languages","Nepali"),200);
+        String slot=request("POST","/api/live-classes/slots",teacher,Map.of("start",System.currentTimeMillis()+3_600_000,
+            "minutes",30,"meetingUrl","","capacity",2),201).path("id").asText();
+        String board="/api/live-classes/slots/"+slot+"/whiteboard";
+        var booking=Map.of("slotId",slot,"goals","","timezone","UTC");
+        request("POST","/api/live-classes/bookings",first,booking,201);
+        request("POST","/api/live-classes/bookings",second,booking,201);
+        request("GET",board,null,null,401);
+        request("GET",board,outsider,null,403);
+        var slideInput=Map.of("title","Rhythm","image","data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=");
+        request("POST",board+"/slides",first,slideInput,403);
+        String slide=request("POST",board+"/slides",teacher,slideInput,200).path("id").asText();
+        assertThat(request("GET",board+"/slides/"+slide,second,null,200).path("image").asText()).isEqualTo(slideInput.get("image"));
+        var point=Map.of("x",0.2,"y",0.4);
+        var stroke=Map.of("slideId",slide,"tool","highlighter","color","#ffee00","points",List.of(point),"label","");
+        String teacherMark=request("POST",board+"/marks",teacher,stroke,200).path("id").asText();
+        String studentMark=request("POST",board+"/marks",first,Map.of("slideId",slide,"tool","text","color","#004c45",
+            "points",List.of(point),"label","Practice this"),200).path("id").asText();
+        var page=request("GET",board+"?slideId="+slide,second,null,200);
+        assertThat(page.path("marks").size()).isEqualTo(2);
+        assertThat(page.path("marks").get(0).path("authorId").asText()).isNotEqualTo(page.path("marks").get(1).path("authorId").asText());
+        assertThat(page.path("marks").get(1).path("label").asText()).isEqualTo("Practice this");
+        assertThat(request("GET",board,second,null,200).path("marks").size()).isZero();
+        assertThat(request("GET",board+"?slideId="+slide+"&revision="+page.path("revision").asLong(),second,null,200).path("unchanged").asBoolean()).isTrue();
+        request("DELETE",board+"/marks/"+teacherMark,first,null,404);
+        request("DELETE",board+"/marks/"+studentMark,first,null,200);
+        assertThat(request("GET",board+"?slideId="+slide,teacher,null,200).path("marks").size()).isEqualTo(1);
+        var rectangle=Map.of("slideId",slide,"tool","rectangle","color","#004c45",
+            "points",List.of(point,Map.of("x",0.5,"y",0.7)),"label","","strokeStyle","dashed","strokeWidth",8);
+        String shape=request("POST",board+"/marks",first,rectangle,200).path("id").asText();
+        request("POST",board+"/marks",first,Map.of("slideId",slide,"tool","rectangle","color","#004c45","points",List.of(point),"label",""),400);
+        var savedShape=request("GET",board+"?slideId="+slide,second,null,200).path("marks").get(1);
+        assertThat(savedShape.path("tool").asText()).isEqualTo("rectangle");
+        assertThat(savedShape.path("strokeStyle").asText()).isEqualTo("dashed");
+        assertThat(savedShape.path("strokeWidth").asInt()).isEqualTo(8);
+        request("POST",board+"/erasures",first,Map.of("slideId",slide,"markIds",List.of(shape,teacherMark),
+            "points",List.of(point,Map.of("x",0.3,"y",0.4)),"radius",18),200);
+        request("POST",board+"/erasures",first,Map.of("slideId",slide,"markIds",List.of(shape),"points",List.of(point),"radius",31),400);
+        var partiallyErased=request("GET",board+"?slideId="+slide,second,null,200);
+        assertThat(partiallyErased.path("marks").size()).isEqualTo(2);
+        assertThat(partiallyErased.path("erasures").size()).isEqualTo(1);
+        assertThat(partiallyErased.path("erasures").get(0).path("markId").asText()).isEqualTo(shape);
+        assertThat(partiallyErased.path("erasures").get(0).path("radius").asInt()).isEqualTo(18);
+        request("DELETE",board+"/marks/"+shape,first,null,200);
+        assertThat(request("GET",board+"?slideId="+slide,teacher,null,200).path("marks").size()).isEqualTo(1);
+    }
     @Test void concurrentBookingHasExactlyOneWinner() throws Exception {
         String teacher=register("instructor"),a=register("student"),b=register("student");
         request("PUT","/api/live-classes/teacher",teacher,Map.of("subject","Music","bio","Music teacher","languages","Nepali"),200);

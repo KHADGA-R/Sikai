@@ -1,0 +1,2 @@
+ALTER TABLE live_board_erase ADD COLUMN radius INTEGER NOT NULL DEFAULT 15
+    CHECK (radius BETWEEN 6 AND 30);

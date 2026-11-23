@@ -100,7 +100,7 @@ public class LiveService {
     @Transactional public void meeting(String id,String url,AuthService.User user) {
         lock(); slotOwner(id,user); safeUrl(url);
         String before=db.one("SELECT meeting_url FROM live_slot WHERE id=?",id).get("meeting_url").toString();
-        db.update("UPDATE live_slot SET meeting_url=? WHERE id=?",url.trim(),id);
+        db.update("UPDATE live_slot SET meeting_url=?,board_revision=board_revision+1 WHERE id=?",url.trim(),id);
         if(!before.equals(url.trim())) for(var booking:db.list("SELECT id FROM booking WHERE slot_id=? AND status='confirmed'",id)) notifications.liveEvent(booking.get("id").toString(),"meeting_updated",Db.id(),user.id());
     }
 
