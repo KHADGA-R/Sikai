@@ -1,6 +1,8 @@
 import { Component, DestroyRef, ElementRef, afterEveryRender, computed, effect, inject, input, output, signal } from '@angular/core';
 import { NgTemplateOutlet } from '@angular/common';
 import { ActivityWidget, readActivityState, WhiteboardActivityComponent } from './whiteboard-activity.component';
+import { MATH_WIDGETS, WhiteboardMathComponent } from './whiteboard-math.component';
+import { DrawingSettings } from './whiteboard-drawing';
 
 export interface NoteBounds { x: number; y: number; width: number; height: number; }
 export type NoteKind = 'sticky' | 'table' | 'graph' | 'flowchart';
@@ -68,7 +70,7 @@ interface LearningObjectContent {
 @Component({
   selector: 'app-whiteboard-note',
   standalone: true,
-  imports: [NgTemplateOutlet, WhiteboardActivityComponent],
+  imports: [NgTemplateOutlet, WhiteboardActivityComponent, WhiteboardMathComponent],
   template: `
     <div class="note-titlebar">
       @if (editable()) {
@@ -158,6 +160,10 @@ interface LearningObjectContent {
     @case ('graph') {
       @if (widget(); as activity) {
         <app-whiteboard-activity [widget]="activity" [text]="note().text" [editable]="editable()"
+          (changed)="changed.emit({ text: $event })" />
+      } @else if (mathWidget()) {
+        <app-whiteboard-math [widget]="mathWidget()!.kind" [text]="note().text" [editable]="editable()"
+          [drawingSettings]="gridDrawingSettings()"
           (changed)="changed.emit({ text: $event })" />
       } @else {
       <div class="object-controls">
@@ -321,6 +327,7 @@ interface LearningObjectContent {
     '(focusout)': 'onNoteFocus(false, $event)',
     '[class.pink]': "note().color === 'pink'",
     '[class.learning-object]': "kind() !== 'sticky'",
+    '[class.math-object]': 'mathWidget() !== null',
     '[style.left.%]': 'bounds().x / 10',
     '[style.top.%]': 'bounds().y / 10',
     '[style.width.%]': 'bounds().width / 10',
@@ -331,6 +338,7 @@ interface LearningObjectContent {
     :host(.pink) { border-color: #d98da9; color: #462336; background: #ffcee0; }
     :host(.learning-object) { border-color: #aebfdb; color: #162846; background: #fff; }
     :host(.learning-object) .note-titlebar { background: #e9f0fa; }
+    :host(.math-object) .note-titlebar { color: #000; }
     :host(:focus-within) { z-index: 2; }
     .note-titlebar { display: flex; align-items: center; justify-content: space-between; gap: 2px; min-height: 24px; padding-inline: 3px; background: #51350212; }
     .note-titlebar button, .resize { border: 0; background: transparent; color: inherit; font: inherit; line-height: 1; }
@@ -429,6 +437,7 @@ export class WhiteboardNoteComponent {
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
   readonly note = input.required<StickyNote>();
   readonly editable = input(false);
+  readonly gridDrawingSettings = input<DrawingSettings>();
   readonly preview = input<FlowPreview | null>(null);
   readonly previewChanged = output<FlowPreview | null>();
   readonly changed = output<NotePatch>();
@@ -456,14 +465,15 @@ export class WhiteboardNoteComponent {
   private readonly draft = signal<NoteBounds | null>(null);
   readonly bounds = computed(() => (this.editable() ? this.draft() : this.preview()?.bounds) ?? this.note());
   readonly kind = computed(() => this.note().kind ?? 'sticky');
+  readonly widgetName = computed(() => this.kind() === 'graph' ? readActivityState(this.note().text)['widget'] : null);
+  readonly mathWidget = computed(() => MATH_WIDGETS.find(tool => tool.kind === this.widgetName()) ?? null);
   readonly widget = computed<ActivityWidget | null>(() => {
-    if (this.kind() !== 'graph') return null;
-    const widget = readActivityState(this.note().text)['widget'];
+    const widget = this.widgetName();
     return widget === 'pie' || widget === 'timer' ? widget : null;
   });
-  readonly label = computed(() => this.widget() === 'pie' ? 'pie chart' : this.widget() === 'timer' ? 'countdown timer'
+  readonly label = computed(() => this.mathWidget()?.label.toLowerCase() ?? (this.widget() === 'pie' ? 'pie chart' : this.widget() === 'timer' ? 'countdown timer'
     : this.content().histogram ? 'histogram'
-    : ({ sticky: 'sticky note', table: 'table', graph: 'bar graph', flowchart: 'flowchart' })[this.kind()]);
+    : ({ sticky: 'sticky note', table: 'table', graph: 'bar graph', flowchart: 'flowchart' })[this.kind()]));
   readonly title = computed(() => this.kind() === 'sticky'
     ? this.note().authorName
     : this.label().replace(/^./, char => char.toUpperCase()) + ' · ' + this.note().authorName);

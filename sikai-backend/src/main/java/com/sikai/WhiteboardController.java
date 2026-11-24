@@ -30,7 +30,7 @@ public class WhiteboardController {
     public record NoteInput(@NotBlank @Size(max=36) String slideId,
                             @NotNull @Pattern(regexp="yellow|pink") String color,
                             @Pattern(regexp="sticky|table|graph|flowchart") String kind,
-                            boolean histogram, @Pattern(regexp="pie|timer") String widget) {}
+                            boolean histogram, @Pattern(regexp="pie|timer|number-line|fraction-bars|ten-frame|coordinate-grid") String widget) {}
     public record NoteBounds(@Min(0) @Max(1000) int x, @Min(0) @Max(1000) int y,
                              @Min(120) @Max(1000) int width, @Min(140) @Max(1000) int height) {}
     public record NoteUpdate(@Size(max=12000) String text, @Valid NoteBounds bounds) {}

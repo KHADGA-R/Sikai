@@ -103,7 +103,7 @@
           </label>
           <details #insertMenu class="insert-menu"
             (focusout)="!insertMenu.contains($any($event.relatedTarget)) && (insertMenu.open = false)"
-            (keydown.escape)="closeInsertMenu(insertMenu, insertTrigger)">
+            (keydown.escape)="closeToolbarMenu(insertMenu, insertTrigger)">
             <summary #insertTrigger class="tool-select insert-trigger" aria-label="Insert whiteboard object">
               <app-theme-icon name="insert" />
               Insert
@@ -111,11 +111,40 @@
             </summary>
             <div class="insert-options">
               @for (item of insertTools; track item.kind) {
-                <button type="button" (click)="closeInsertMenu(insertMenu, insertTrigger); insertLearningTool(item.kind)">
+                <button type="button" (click)="closeToolbarMenu(insertMenu, insertTrigger); insertLearningTool(item.kind)">
                   <app-theme-icon [name]="item.icon" />
                   {{ item.label }}
                 </button>
               }
+            </div>
+          </details>
+          <details #subjectMenu class="insert-menu"
+            (focusout)="!subjectMenu.contains($any($event.relatedTarget)) && (subjectMenu.open = false)"
+            (keydown.escape)="closeToolbarMenu(subjectMenu, subjectTrigger)"
+            (toggle)="resetSubjectMenu(subjectMenu, subjects, maths)">
+            <summary #subjectTrigger class="tool-select insert-trigger" aria-label="Subject tools">
+              <app-theme-icon name="shapes" />
+              Tools
+              <app-theme-icon class="insert-chevron" name="chevron" />
+            </summary>
+            <div class="insert-options subject-options">
+              <div #subjects class="subject-list">
+                <button type="button" (click)="showToolMenu(maths, subjects)">
+                  <app-theme-icon name="calculator" /> Maths
+                  <app-theme-icon class="subject-next" name="chevron" />
+                </button>
+              </div>
+              <div #maths class="subject-list" hidden>
+                <button type="button" class="subject-back" aria-label="Back to subjects" (click)="showToolMenu(subjects, maths)">
+                  <app-theme-icon class="subject-previous" name="chevron" /> Maths
+                </button>
+                @for (item of mathsTools; track item.kind) {
+                  <button type="button" (click)="closeToolbarMenu(subjectMenu, subjectTrigger); insertMathTool(item.kind)">
+                    <app-theme-icon [name]="item.icon" />
+                    {{ item.label }}
+                  </button>
+                }
+              </div>
             </div>
           </details>
           <label class="tool-select" title="Show marks by participant">
@@ -209,6 +238,7 @@
           </svg>
           @for (note of notes(); track note.id) {
             <app-whiteboard-note [note]="note" [editable]="note.authorId === userId()"
+              [gridDrawingSettings]="gridDrawingSettings()"
               [preview]="flowPreviews()[note.id] ?? null" (previewChanged)="setFlowPreview(note.id, $event)"
               (changed)="changeNote(note.id, $event)" (removed)="deleteNote(note.id)" />
           }

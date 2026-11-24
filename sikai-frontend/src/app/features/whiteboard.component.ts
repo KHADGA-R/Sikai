@@ -8,11 +8,11 @@ import { FlowPreview, NoteKind, NotePatch, StickyNote, WhiteboardNoteComponent }
 import { ThemeIconComponent } from '../shared/theme-icon.component';
 import { ClassroomVideoComponent } from './classroom-video.component';
 import { CalculatorPreview, WhiteboardCalculatorComponent } from './whiteboard-calculator.component';
+import { MATH_WIDGETS, MathWidget } from './whiteboard-math.component';
+import { DrawingSettings, DrawingTool, Shape, StrokeStyle, drawingOutline } from './whiteboard-drawing';
 import type { ClassroomView } from './classroom-video.component';
 
-type Shape = 'line' | 'rectangle' | 'ellipse' | 'circle' | 'arrow';
-type Tool = 'pen' | 'highlighter' | 'text' | Shape;
-type StrokeStyle = 'solid' | 'dashed' | 'dotted';
+type Tool = DrawingTool;
 interface Point { x: number; y: number; }
 interface Drawing { tool: Tool; color: string; points: Point[]; label: string; strokeStyle?: StrokeStyle; strokeWidth?: number; }
 interface Mark extends Drawing { id: string; authorId: string; authorName: string; }
@@ -32,6 +32,7 @@ interface Board {
   notes?: StickyNote[];
   supportsFlowPreviews?: boolean;
   supportsActivityWidgets?: boolean;
+  supportsMathWidgets?: boolean;
   supportsCalculatorPreviews?: boolean;
   supportsHistogram?: boolean;
 }
@@ -79,6 +80,7 @@ export class WhiteboardComponent {
     { kind: 'flowchart', label: 'Flowchart', icon: 'flowchart' },
     { kind: 'timer', label: 'Countdown timer', icon: 'timer' },
   ] as const;
+  readonly mathsTools = MATH_WIDGETS;
   readonly strokeStyles = [
     { value: 'solid', label: 'Solid' }, { value: 'dashed', label: 'Dashed' }, { value: 'dotted', label: 'Dotted' },
   ] as const;
@@ -88,6 +90,11 @@ export class WhiteboardComponent {
   readonly strokeStyle = signal<StrokeStyle>('solid');
   readonly penWidth = signal<number>(4);
   readonly color = signal('#004c45');
+  readonly gridDrawingSettings = computed<DrawingSettings>(() => {
+    const tool = this.tool();
+    return { tool, color: this.color(), strokeStyle: this.strokeStyle(),
+      width: tool === 'pen' ? this.penWidth() : tool === 'highlighter' ? 10 : 3 };
+  });
   readonly text = signal('');
   readonly draft = signal<Drawing | null>(null);
   readonly eraserRadius = signal(15);
@@ -448,38 +455,11 @@ export class WhiteboardComponent {
   }
 
   outline(mark: Drawing): string {
-    const first = mark.points[0];
-    const last = mark.points.at(-1)!;
-    const x = first.x * 1000, y = first.y * 562;
-    const endX = last.x * 1000, endY = last.y * 562;
-    switch (mark.tool) {
-      case 'line':
-        return `M ${x} ${y} L ${endX} ${endY}`;
-      case 'rectangle':
-        return `M ${x} ${y} H ${endX} V ${endY} H ${x} Z`;
-      case 'ellipse': {
-        const rx = Math.abs(endX - x) / 2, ry = Math.abs(endY - y) / 2;
-        const left = Math.min(x, endX), right = Math.max(x, endX), centerY = (y + endY) / 2;
-        return `M ${left} ${centerY} A ${rx} ${ry} 0 1 0 ${right} ${centerY} A ${rx} ${ry} 0 1 0 ${left} ${centerY}`;
-      }
-      case 'circle': {
-        const radius = Math.hypot(endX - x, endY - y);
-        return `M ${x - radius} ${y} A ${radius} ${radius} 0 1 0 ${x + radius} ${y} A ${radius} ${radius} 0 1 0 ${x - radius} ${y}`;
-      }
-      case 'arrow': {
-        const angle = Math.atan2(endY - y, endX - x);
-        const size = Math.min(20, Math.hypot(endX - x, endY - y) * 0.4);
-        const wing = (offset: number) => `${endX - size * Math.cos(angle + offset)} ${endY - size * Math.sin(angle + offset)}`;
-        return `M ${x} ${y} L ${endX} ${endY} M ${wing(-0.55)} L ${endX} ${endY} L ${wing(0.55)}`;
-      }
-      default:
-        return this.strokePath(mark.points);
-    }
+    return drawingOutline(mark.tool, mark.points, 1000, 562);
   }
 
   private strokePath(points: Point[]): string {
-    const path = 'M ' + points.map(point => (point.x * 1000) + ' ' + (point.y * 562)).join(' L ');
-    return points.length === 1 ? path + ' h 0.1' : path;
+    return drawingOutline('pen', points, 1000, 562);
   }
 
   width(mark: Drawing): number {
@@ -529,7 +509,7 @@ export class WhiteboardComponent {
     await this.write(async () => { await this.api.request('DELETE', this.resource + '/marks/' + id); });
   }
 
-  addNote(color: StickyNote['color'], kind: NoteKind = 'sticky', histogram = false, widget?: 'pie' | 'timer'): void {
+  addNote(color: StickyNote['color'], kind: NoteKind = 'sticky', histogram = false, widget?: 'pie' | 'timer' | MathWidget): void {
     const slideId = this.selected().id;
     this.queueNoteWrite(async () => {
       await this.api.request('POST', this.resource + '/notes', { slideId, color, kind, histogram, widget });
@@ -554,9 +534,26 @@ export class WhiteboardComponent {
     select.value = '';
   }
 
-  closeInsertMenu(menu: HTMLDetailsElement, trigger: HTMLElement): void {
+  closeToolbarMenu(menu: HTMLDetailsElement, trigger: HTMLElement): void {
     trigger.focus();
     menu.open = false;
+  }
+
+  showToolMenu(show: HTMLElement, hide: HTMLElement): void {
+    show.hidden = false;
+    show.querySelector('button')?.focus();
+    hide.hidden = true;
+  }
+
+  resetSubjectMenu(menu: HTMLDetailsElement, subjects: HTMLElement, activities: HTMLElement): void {
+    if (menu.open) return;
+    subjects.hidden = false;
+    activities.hidden = true;
+  }
+
+  insertMathTool(kind: MathWidget): void {
+    if (this.board()?.supportsMathWidgets) this.addNote('yellow', 'graph', false, kind);
+    else this.error.set('Restart the Sikai backend with the current code, then reload to use Maths tools.');
   }
 
   insertLearningTool(kind: typeof this.insertTools[number]['kind']): void {

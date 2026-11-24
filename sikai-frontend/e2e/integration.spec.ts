@@ -111,7 +111,7 @@ test('instructor publishes an uploaded course; student enrolls, opens its file a
 });
 
 test('live teacher availability, student booking, messaging, meeting link and cancellation cross accounts', async ({ page, browser }) => {
-  test.setTimeout(120_000);
+  test.setTimeout(150_000);
   await register(page, 'instructor', 'Live Teacher');
   await page.goto('/instructor/about');
   await page.getByRole('combobox', { name: 'Teaching subject', exact: true }).selectOption('Music');
@@ -489,6 +489,72 @@ test('live teacher availability, student booking, messaging, meeting link and ca
     await expect(sharedTimer.getByText('Running', { exact: true })).toBeVisible();
     await timer.getByRole('button', { name: 'Reset', exact: true }).click();
     await expect(sharedTimer.getByRole('timer')).toHaveText('0:30');
+    await insert.click();
+    await expect(page.getByRole('button', { name: 'Number line', exact: true })).toBeHidden();
+    await insert.press('Escape');
+    const tools = page.getByLabel('Subject tools');
+    const openMaths = async () => {
+      await tools.click();
+      await page.getByRole('button', { name: 'Maths', exact: true }).click();
+    };
+    await openMaths();
+    await page.getByRole('button', { name: 'Back to subjects' }).click();
+    await page.getByRole('button', { name: 'Maths', exact: true }).click();
+    await page.getByRole('button', { name: 'Number line', exact: true }).click();
+    const step = page.getByLabel('Number line step');
+    await step.fill('0.5');
+    await step.press('Tab');
+    await page.getByRole('button', { name: 'Mark 1.5 on number line', exact: true }).click();
+    await expect(student.getByRole('button', { name: 'Mark 1.5 on number line', exact: true })).toHaveAttribute('aria-pressed', 'true');
+
+    await openMaths();
+    await page.getByRole('button', { name: 'Fraction bars', exact: true }).click();
+    await page.getByRole('group', { name: 'Fraction bar 1', exact: true }).getByRole('button', { name: 'Shade 2 of 3 parts' }).click();
+    await page.getByRole('group', { name: 'Fraction bar 2', exact: true }).getByRole('button', { name: 'Shade 3 of 4 parts' }).click();
+    await expect(student.getByText('2/3', { exact: true })).toBeVisible();
+    await expect(student.getByText('3/4', { exact: true })).toBeVisible();
+
+    await openMaths();
+    await page.getByRole('button', { name: 'Ten-frame', exact: true }).click();
+    await page.getByRole('button', { name: 'Counter 4', exact: true }).click();
+    await expect(student.getByRole('button', { name: 'Counter 4', exact: true })).toHaveAttribute('aria-pressed', 'true');
+    await expect(student.getByText('1 of 10', { exact: true })).toBeVisible();
+
+    await openMaths();
+    await page.getByRole('button', { name: 'Coordinate grid', exact: true }).click();
+    const plotPoint = page.getByRole('button', { name: 'Point (2, 2)', exact: true });
+    await plotPoint.click();
+    await expect(student.getByRole('button', { name: 'Point (2, 2)', exact: true })).toHaveAttribute('aria-pressed', 'true');
+    await expect(student.getByText('Plotted points (2, 2)', { exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'Pen', exact: true }).click();
+    await page.getByRole('group', { name: 'Coordinate grid mode' }).getByRole('button', { name: 'Line', exact: true }).click();
+    const gridSurface = page.getByLabel('Coordinate grid drawing surface');
+    const drawOnGrid = async (startX: number, startY: number, endX: number, endY: number) => {
+      await gridSurface.scrollIntoViewIfNeeded();
+      const gridBounds = (await gridSurface.boundingBox())!;
+      await page.mouse.move(gridBounds.x + gridBounds.width * startX, gridBounds.y + gridBounds.height * startY);
+      await page.mouse.down();
+      await page.mouse.move(gridBounds.x + gridBounds.width * endX, gridBounds.y + gridBounds.height * endY, { steps: 4 });
+      await page.mouse.up();
+    };
+    await drawOnGrid(0.28, 0.3, 0.58, 0.5);
+    await expect(student.locator('.grid-stroke[data-tool="line"]')).toHaveCount(1);
+    await page.getByRole('button', { name: 'Draw', exact: true }).click();
+    await page.getByLabel('Shape', { exact: true }).selectOption('rectangle');
+    await drawOnGrid(0.35, 0.25, 0.7, 0.6);
+    await expect(student.locator('.grid-stroke[data-tool="rectangle"]')).toHaveCount(1);
+    await page.getByRole('button', { name: 'Pen', exact: true }).click();
+    await drawOnGrid(0.15, 0.35, 0.48, 0.55);
+    await expect(student.locator('.grid-stroke[data-tool="pen"]')).toHaveCount(1);
+    await page.getByRole('button', { name: 'Undo drawing', exact: true }).click();
+    await expect(student.locator('.grid-stroke[data-tool="pen"]')).toHaveCount(0);
+    await page.getByRole('button', { name: 'Plot points', exact: true }).click();
+    await expect(plotPoint).toBeEnabled();
+    await expect(plotPoint).toHaveAttribute('aria-pressed', 'true');
+    await page.getByLabel('Coordinate grid size', { exact: true }).press('ArrowRight');
+    await expect(student.getByRole('group', { name: 'Coordinate grid with x and y axes' })).toHaveCSS('width', '240px');
+    await expect(student.locator('.grid-stroke[data-tool="line"]')).toHaveCount(1);
+    await expect(student.getByRole('button', { name: 'Point (2, 2)', exact: true })).toHaveAttribute('aria-pressed', 'true');
     await student.getByRole('link', { name: 'Back to live classes' }).click();
     await student.route('**/api/live-classes/slots/*/join', route => route.fulfill({
       status: 404, json: { message: 'Endpoint not found' },

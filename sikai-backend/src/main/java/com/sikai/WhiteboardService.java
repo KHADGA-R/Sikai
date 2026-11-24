@@ -60,6 +60,7 @@ public class WhiteboardService {
             Map.entry("supportsFlowPreviews", true),
             Map.entry("supportsCalculatorPreviews", true),
             Map.entry("supportsActivityWidgets", true),
+            Map.entry("supportsMathWidgets", true),
             Map.entry("slides", slides), Map.entry("marks", marks), Map.entry("erasures", erasures), Map.entry("notes", notes));
     }
 
@@ -149,7 +150,7 @@ public class WhiteboardService {
             INSERT INTO live_board_note(id,slot_id,slide_id,author_id,color,kind,note_text,left_pos,top_pos,note_width,note_height,revision)
             VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
             """, id, slotId, input.slideId(), user.id(), input.color(), kind, content, offset, offset,
-            sticky ? 250 : 560, sticky ? 275 : 390, revision);
+            sticky ? 250 : 560, sticky ? 275 : "coordinate-grid".equals(input.widget()) ? 620 : 390, revision);
         return Map.of("id", id);
     }
 

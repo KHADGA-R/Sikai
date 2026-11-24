@@ -45,6 +45,10 @@ export class ThemeIconComponent {
     histogram: 'M3 20h18 M4 20v-6h5v-4h5V5h5v15 M9 14v6 M14 10v10',
     pie: 'M12 3a9 9 0 1 0 9 9h-9z M15 3v6h6a8 8 0 0 0-6-6z',
     timer: 'M9 2h6 M12 2v3 M18 6l2-2 M12 8v5l3 2 M20 13a8 8 0 1 1-16 0 8 8 0 0 1 16 0z',
+    'number-line': 'M2 13h20 M2 13l3-3m-3 3 3 3 M22 13l-3-3m3 3-3 3 M8 10v6 M12 10v6 M16 10v6',
+    'fraction-bars': 'M3 4h18v6H3z M3 14h18v6H3z M12 4v6 M9 14v6 M15 14v6',
+    'ten-frame': 'M2 6h20v12H2z M2 12h20 M6 6v12 M10 6v12 M14 6v12 M18 6v12',
+    'coordinate-grid': 'M4 4h16v16H4z M8 4v16 M12 2v20 M16 4v16 M4 8h16 M2 12h20 M4 16h16 M16 8h.01',
     flowchart: 'M8 3h8v5H8z M12 8v5 M6 15v-2h12v2 M3 15h6v6H3z M15 15h6v6h-6z',
     undo: 'M9 8H4m0 0 4-4M4 8l4 4 M9 8h7a5 5 0 0 1 0 10h-4',
   };
