@@ -1,4 +1,5 @@
-import { Component, computed, input, output, signal } from '@angular/core';
+import { Component, ElementRef, computed, effect, input, output, signal, viewChild } from '@angular/core';
+import { NgTemplateOutlet } from '@angular/common';
 import { readActivityState } from './whiteboard-activity.component';
 import { DrawingSettings, DrawingTool, drawingOutline } from './whiteboard-drawing';
 
@@ -18,6 +19,7 @@ const MAX_GRID_STROKE_POINTS = 80;
 @Component({
   selector: 'app-whiteboard-math',
   standalone: true,
+  imports: [NgTemplateOutlet],
   template: `
     @switch (widget()) {
       @case ('number-line') {
@@ -30,14 +32,25 @@ const MAX_GRID_STROKE_POINTS = 80;
             <label>Intervals <input type="number" aria-label="Number line intervals" min="2" max="20" step="1"
               [value]="line().intervals" (change)="setLine('intervals', $event)" /></label>
           </div>
+          <div class="math-controls" role="group" aria-label="Number line mode">
+            <button type="button" [attr.aria-pressed]="gridMode() === 'points'" (click)="setGridMode('points')">Mark values</button>
+            <button type="button" [attr.aria-pressed]="gridMode() === 'line'" (click)="setGridMode('line')">Line</button>
+            <button type="button" [attr.aria-pressed]="gridMode() === 'toolbar'" (click)="setGridMode('toolbar')">Draw</button>
+            <button type="button" [disabled]="!line().drawings.length" (click)="undoDrawing()">Undo drawing</button>
+          </div>
         }
-        <div class="number-line" role="group" aria-label="Number line ticks">
+        <div #numberLine class="number-line" role="group" aria-label="Number line ticks">
           @for (value of ticks(); track $index; let index = $index) {
-            <button type="button" class="tick" [disabled]="!editable()"
+            <button type="button" class="tick" [disabled]="!editable() || drawMode()"
               [attr.aria-label]="'Mark ' + value + ' on number line'" [attr.aria-pressed]="line().marks.includes(index)"
               (click)="toggleTick(index)"><span>{{ value }}</span></button>
           }
+          <ng-container *ngTemplateOutlet="drawingLayer; context: { label: 'Number line drawing surface' }" />
         </div>
+        @if (editable() && drawMode()) {
+          <p class="summary">{{ gridMode() === 'line' ? 'Drag from one endpoint to the other.'
+            : 'Choose Pen or a shape in the whiteboard toolbar, then draw on the number line.' }}</p>
+        }
         @if (line().marks.length) {
           <p class="summary">Marked values {{ markedValues() }}</p>
         }
@@ -116,19 +129,7 @@ const MAX_GRID_STROKE_POINTS = 80;
               @if (plottedPoints().has(point.join(':'))) { <span class="dot" aria-hidden="true"></span> }
             </button>
           }
-          <svg #gridDrawing class="grid-drawing" viewBox="0 0 100 100" [class.active]="editable() && drawMode()"
-            [attr.aria-label]="drawMode() ? 'Coordinate grid drawing surface' : null"
-            [attr.aria-hidden]="drawMode() ? null : 'true'"
-            (pointerdown)="startGridDrawing($event, gridDrawing)" (pointermove)="moveGridDrawing($event, gridDrawing)"
-            (pointerup)="finishGridDrawing($event, gridDrawing)" (pointercancel)="cancelGridDrawing()"
-            (lostpointercapture)="cancelGridDrawing()">
-            @for (mark of renderedDrawings(); track $index) {
-              <path class="grid-stroke" [attr.data-tool]="mark.tool" [attr.d]="gridOutline(mark)"
-                [attr.stroke]="mark.color" [attr.stroke-width]="mark.width"
-                [attr.stroke-dasharray]="gridDash(mark)" [attr.opacity]="mark.tool === 'highlighter' ? 0.45 : 1"
-                vector-effect="non-scaling-stroke" fill="none" stroke-linecap="round" stroke-linejoin="round" />
-            }
-          </svg>
+          <ng-container *ngTemplateOutlet="drawingLayer; context: { label: 'Coordinate grid drawing surface' }" />
         </div>
         @if (editable() && drawMode()) {
           <p class="summary">{{ gridMode() === 'line' ? 'Drag from one end of the line to the other.'
@@ -140,6 +141,21 @@ const MAX_GRID_STROKE_POINTS = 80;
         }
       }
     }
+    <ng-template #drawingLayer let-label="label">
+      <svg #drawingSurface class="grid-drawing" [attr.viewBox]="drawingViewBox()" preserveAspectRatio="none" [class.active]="editable() && drawMode()"
+        [attr.aria-label]="drawMode() ? label : null" [attr.aria-hidden]="drawMode() ? null : 'true'"
+        (pointerdown)="startGridDrawing($event, drawingSurface)" (pointermove)="moveGridDrawing($event, drawingSurface)"
+        (pointerup)="finishGridDrawing($event, drawingSurface)" (pointercancel)="cancelGridDrawing()"
+        (lostpointercapture)="cancelGridDrawing()">
+        @for (mark of renderedDrawings(); track $index) {
+          <path [class.grid-stroke]="widget() === 'coordinate-grid'" [class.number-line-stroke]="widget() === 'number-line'"
+            [attr.data-tool]="mark.tool" [attr.d]="gridOutline(mark)"
+            [attr.stroke]="mark.color" [attr.stroke-width]="mark.width"
+            [attr.stroke-dasharray]="gridDash(mark)" [attr.opacity]="mark.tool === 'highlighter' ? 0.45 : 1"
+            vector-effect="non-scaling-stroke" fill="none" stroke-linecap="round" stroke-linejoin="round" />
+        }
+      </svg>
+    </ng-template>
   `,
   styles: [`
     :host { display: block; flex: 1; min-height: 0; overflow: auto; padding: 8px 8px 16px; color: #000; font-size: .75rem; }
@@ -155,11 +171,11 @@ const MAX_GRID_STROKE_POINTS = 80;
     button:focus-visible { outline: 2px solid #164883; outline-offset: -2px; }
     .summary { margin: 5px 0 0; overflow-wrap: anywhere; }
     .number-line { position: relative; display: flex; width: max-content; min-width: 100%; padding-block: 4px; }
-    .number-line::before { content: ''; position: absolute; inset: 15px 8px auto; border-top: 2px solid #405985; }
-    .tick { position: relative; flex: 1; min-width: 39px; min-height: 38px; padding: 19px 2px 0; border: 0;
+    .number-line::before { content: ''; position: absolute; inset: 25px 8px auto; border-top: 2px solid #405985; }
+    .tick { position: relative; flex: 1; min-width: 39px; min-height: 52px; padding: 31px 2px 0; border: 0;
       background: transparent; color: inherit; font: inherit; font-variant-numeric: tabular-nums; cursor: pointer; }
-    .tick::before { content: ''; position: absolute; top: 5px; left: calc(50% - 1px); width: 2px; height: 14px; background: #405985; }
-    .tick[aria-pressed="true"]::before { top: 6px; left: calc(50% - 5px); width: 10px; height: 10px; border-radius: 50%; background: #087765; }
+    .tick::before { content: ''; position: absolute; top: 15px; left: calc(50% - 1px); width: 2px; height: 14px; background: #405985; }
+    .tick[aria-pressed="true"]::before { top: 16px; left: calc(50% - 5px); width: 10px; height: 10px; border-radius: 50%; background: #087765; }
     .fraction + .fraction { margin-top: 10px; }
     .fraction-bar { display: grid; grid-template-columns: repeat(var(--parts), minmax(0, 1fr)); border: 1px solid #667eaa; border-radius: 4px; }
     .fraction-bar button { min-height: 25px; padding: 0; border: 0; border-inline-end: 1px solid #667eaa; background: #f4f8ff; cursor: pointer; }
@@ -203,6 +219,13 @@ export class WhiteboardMathComponent {
   readonly gridMode = signal<'points' | 'line' | 'toolbar'>('points');
   readonly gridSizeDraft = signal<number | null>(null);
   readonly drawMode = computed(() => this.gridMode() !== 'points');
+  private readonly numberLine = viewChild<ElementRef<HTMLElement>>('numberLine');
+  private readonly numberLineSize = signal({ width: 100, height: 100 });
+  readonly drawingViewBox = computed(() => {
+    if (this.widget() !== 'number-line') return '0 0 100 100';
+    const { width, height } = this.numberLineSize();
+    return '0 0 ' + width + ' ' + height;
+  });
   readonly drawingError = signal('');
   private readonly gridDraft = signal<GridDrawing | null>(null);
   private drawingPointer?: number;
@@ -215,6 +238,7 @@ export class WhiteboardMathComponent {
       step: this.bounded(state['step'], 1, 0.01, 100, 2),
       intervals,
       marks: this.indices(state['marks'], intervals + 1),
+      drawings: this.readGridDrawings(state['drawings']),
     };
   });
   readonly ticks = computed(() => this.range(this.line().intervals + 1).map(index =>
@@ -246,10 +270,25 @@ export class WhiteboardMathComponent {
   });
   readonly plottedPoints = computed(() => new Set(this.grid().points.map(point => point.join(':'))));
   readonly pointList = computed(() => this.grid().points.map(point => this.coordinates(point)).join(', '));
+  private readonly drawingState = computed(() => this.widget() === 'number-line' ? this.line() : this.grid());
   readonly renderedDrawings = computed(() => {
     const draft = this.gridDraft();
-    return draft ? [...this.grid().drawings, draft] : this.grid().drawings;
+    const { drawings } = this.drawingState();
+    return draft ? [...drawings, draft] : drawings;
   });
+
+  constructor() {
+    effect(cleanup => {
+      const element = this.numberLine()?.nativeElement;
+      if (!element) return;
+      const observer = new ResizeObserver(([entry]) => {
+        const { width, height } = entry.target.getBoundingClientRect();
+        if (width > 0 && height > 0) this.numberLineSize.set({ width, height });
+      });
+      observer.observe(element);
+      cleanup(() => observer.disconnect());
+    });
+  }
 
   range(count: number): number[] {
     return Array.from({ length: count }, (_, index) => index);
@@ -352,13 +391,13 @@ export class WhiteboardMathComponent {
     const mark = this.gridDraft();
     this.cancelGridDrawing();
     if (!mark || (mark.points.length === 1 && mark.tool !== 'pen' && mark.tool !== 'highlighter')) return;
-    const grid = this.grid();
-    const drawings = [...grid.drawings, mark];
+    const state = this.drawingState();
+    const drawings = [...state.drawings, mark];
     if (drawings.length > 32 || JSON.stringify(drawings).length > 9500) {
       this.drawingError.set('Drawing limit reached. Undo a drawing to add another.');
       return;
     }
-    this.save({ ...grid, drawings });
+    this.save({ ...state, drawings });
   }
 
   cancelGridDrawing(): void {
@@ -368,11 +407,17 @@ export class WhiteboardMathComponent {
 
   undoDrawing(): void {
     this.drawingError.set('');
-    const grid = this.grid();
-    this.save({ ...grid, drawings: grid.drawings.slice(0, -1) });
+    const state = this.drawingState();
+    this.save({ ...state, drawings: state.drawings.slice(0, -1) });
   }
 
   gridOutline(mark: GridDrawing): string {
+    if (this.widget() === 'number-line') {
+      const { start, step, intervals } = this.line();
+      const { width, height } = this.numberLineSize();
+      const points = mark.points.map(([x, y]) => ({ x: ((x - start) / step + 0.5) / (intervals + 1), y }));
+      return drawingOutline(mark.tool, points, width, height, 12);
+    }
     const edge = this.grid().limit + 0.5;
     return drawingOutline(mark.tool, mark.points.map(([x, y]) => ({ x: (x + edge) / (edge * 2), y: (edge - y) / (edge * 2) })), 100, 100, 5);
   }
@@ -385,10 +430,18 @@ export class WhiteboardMathComponent {
 
   private gridPoint(event: PointerEvent, surface: Element): GridPoint {
     const rect = surface.getBoundingClientRect();
+    const x = (event.clientX - rect.left) / rect.width;
+    const y = (event.clientY - rect.top) / rect.height;
+    if (this.widget() === 'number-line') {
+      const { start, step, intervals } = this.line();
+      const span = step * (intervals + 1);
+      const minimum = start - step / 2;
+      return [this.bounded(minimum + x * span, start, minimum, minimum + span, 4), this.bounded(y, 0.5, 0, 1, 4)];
+    }
     const edge = this.grid().limit + 0.5;
     return [
-      this.bounded(((event.clientX - rect.left) / rect.width * 2 - 1) * edge, 0, -edge, edge, 2),
-      this.bounded((1 - (event.clientY - rect.top) / rect.height * 2) * edge, 0, -edge, edge, 2),
+      this.bounded((x * 2 - 1) * edge, 0, -edge, edge, 2),
+      this.bounded((1 - y * 2) * edge, 0, -edge, edge, 2),
     ];
   }
 
@@ -401,7 +454,9 @@ export class WhiteboardMathComponent {
     return value.slice(0, 32).flatMap((mark): GridDrawing[] => {
       if (!mark || !this.isGridTool(mark.tool) || !Array.isArray(mark.points)) return [];
       const points: GridPoint[] = mark.points.slice(0, MAX_GRID_STROKE_POINTS).filter((point: unknown): point is GridPoint =>
-        Array.isArray(point) && point.length === 2 && point.every(coord => Number.isFinite(coord) && Math.abs(coord) <= 6.5));
+        Array.isArray(point) && point.length === 2 && point.every(Number.isFinite) &&
+        (this.widget() === 'number-line' ? Math.abs(point[0]) <= 3050 && point[1] >= 0 && point[1] <= 1
+          : point.every(coord => Math.abs(coord) <= 6.5)));
       if (!points.length) return [];
       const color = typeof mark.color === 'string' && /^#[a-f0-9]{6}$/i.test(mark.color) ? mark.color : '#004c45';
       const strokeStyle = mark.strokeStyle === 'dotted' || mark.strokeStyle === 'dashed' ? mark.strokeStyle : 'solid';
