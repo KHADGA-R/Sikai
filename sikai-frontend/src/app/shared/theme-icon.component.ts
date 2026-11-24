@@ -49,6 +49,7 @@ export class ThemeIconComponent {
     'fraction-bars': 'M3 4h18v6H3z M3 14h18v6H3z M12 4v6 M9 14v6 M15 14v6',
     'ten-frame': 'M2 6h20v12H2z M2 12h20 M6 6v12 M10 6v12 M14 6v12 M18 6v12',
     'coordinate-grid': 'M4 4h16v16H4z M8 4v16 M12 2v20 M16 4v16 M4 8h16 M2 12h20 M4 16h16 M16 8h.01',
+    ruler: 'M3 7h18v10H3z M7 7v4 M10 7v2 M13 7v4 M16 7v2 M19 7v4',
     flowchart: 'M8 3h8v5H8z M12 8v5 M6 15v-2h12v2 M3 15h6v6H3z M15 15h6v6h-6z',
     undo: 'M9 8H4m0 0 4-4M4 8l4 4 M9 8h7a5 5 0 0 1 0 10h-4',
   };

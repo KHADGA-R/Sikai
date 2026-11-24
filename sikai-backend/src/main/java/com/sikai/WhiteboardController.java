@@ -30,7 +30,16 @@ public class WhiteboardController {
     public record NoteInput(@NotBlank @Size(max=36) String slideId,
                             @NotNull @Pattern(regexp="yellow|pink") String color,
                             @Pattern(regexp="sticky|table|graph|flowchart") String kind,
-                            boolean histogram, @Pattern(regexp="pie|timer|number-line|fraction-bars|ten-frame|coordinate-grid") String widget) {}
+                            boolean histogram,
+                            @Pattern(regexp="pie|timer|number-line|fraction-bars|ten-frame|coordinate-grid|2d-shapes|ruler"
+                                + "|number-blocks|abacus|place-value|math-operators|multiplication-grid"
+                                + "|3d-shapes|line-tools|angles|polygon-tools|symmetry-tools|protractor|compass|set-square"
+                                + "|area-perimeter|unit-converter|fraction-circles|fraction-number-line|decimal-grid"
+                                + "|percentage-tool|fraction-calculator|equation-editor|algebra-tiles|equation-solver|inequality-tool"
+                                + "|function-table|expression-builder|point-plotter|line-graph|function-grapher|transformations"
+                                + "|right-triangle|soh-cah-toa|unit-circle|trig-graphs|pythagorean|angle-converter"
+                                + "|mean-median-mode|probability-spinner|dice-coin|box-plot|matrix-tool|vector-tool"
+                                + "|limits-derivatives|integral-graph|complex-plane") String widget) {}
     public record NoteBounds(@Min(0) @Max(1000) int x, @Min(0) @Max(1000) int y,
                              @Min(120) @Max(1000) int width, @Min(140) @Max(1000) int height) {}
     public record NoteUpdate(@Size(max=12000) String text, @Valid NoteBounds bounds) {}

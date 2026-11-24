@@ -61,6 +61,10 @@ public class WhiteboardService {
             Map.entry("supportsCalculatorPreviews", true),
             Map.entry("supportsActivityWidgets", true),
             Map.entry("supportsMathWidgets", true),
+            Map.entry("supportsGeometryWidgets", true),
+            Map.entry("supportsExpandedMathWidgets", true),
+            Map.entry("supportsAlgebraWidgets", true),
+            Map.entry("supportsAdvancedMathWidgets", true),
             Map.entry("slides", slides), Map.entry("marks", marks), Map.entry("erasures", erasures), Map.entry("notes", notes));
     }
 
@@ -146,11 +150,16 @@ public class WhiteboardService {
         Db.require(input.widget() == null || kind.equals("graph") && !input.histogram(), BAD_REQUEST, "Invalid whiteboard widget");
         String content = input.widget() != null ? "{\"widget\":\"" + input.widget() + "\"}"
             : input.histogram() ? "{\"histogram\":true}" : "";
+        int height = "coordinate-grid".equals(input.widget()) || "point-plotter".equals(input.widget())
+            || "decimal-grid".equals(input.widget()) || "line-graph".equals(input.widget())
+            || "function-grapher".equals(input.widget()) || "transformations".equals(input.widget())
+            || "integral-graph".equals(input.widget()) || "trig-graphs".equals(input.widget()) ? 620
+            : "2d-shapes".equals(input.widget()) ? 540 : 390;
         db.update("""
             INSERT INTO live_board_note(id,slot_id,slide_id,author_id,color,kind,note_text,left_pos,top_pos,note_width,note_height,revision)
             VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
             """, id, slotId, input.slideId(), user.id(), input.color(), kind, content, offset, offset,
-            sticky ? 250 : 560, sticky ? 275 : "coordinate-grid".equals(input.widget()) ? 620 : 390, revision);
+            sticky ? 250 : 560, sticky ? 275 : height, revision);
         return Map.of("id", id);
     }
 

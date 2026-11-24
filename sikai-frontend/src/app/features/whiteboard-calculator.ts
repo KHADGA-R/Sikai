@@ -1,7 +1,8 @@
 export type AngleUnit = 'deg' | 'rad';
 
-export function calculate(expression: string, unit: AngleUnit): number {
-  const text = expression.replace(/\s/g, '').replace(/×/g, '*').replace(/÷/g, '/').replace(/−/g, '-');
+export function calculate(expression: string, unit: AngleUnit, variable?: number): number {
+  const normalized = expression.replace(/\s/g, '').replace(/×/g, '*').replace(/÷/g, '/').replace(/−/g, '-');
+  const text = variable === undefined ? normalized : normalized.replace(/(\d|\)|x)(?=x|\(|π)/g, '$1*');
   const pattern = /(?:\d+(?:\.\d*)?|\.\d+)(?:e[+-]?\d+)?|[a-z]+|π|[+\-*/^()%]/iy;
   const tokens: string[] = [];
   while (pattern.lastIndex < text.length) {
@@ -51,6 +52,7 @@ export function calculate(expression: string, unit: AngleUnit): number {
       return value;
     }
     const token = tokens[at++];
+    if (token === 'x' && variable !== undefined) return variable;
     if (token === 'π' || token === 'pi') return Math.PI;
     if (token === 'e') return Math.E;
     if (token && /^\d|^\./.test(token)) return Number(token);

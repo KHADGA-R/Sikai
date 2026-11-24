@@ -1,15 +1,11 @@
 import { Component, ElementRef, computed, effect, input, output, signal, viewChild } from '@angular/core';
 import { NgTemplateOutlet } from '@angular/common';
 import { readActivityState } from './whiteboard-activity.component';
-import { DrawingSettings, DrawingTool, drawingOutline } from './whiteboard-drawing';
-
-export const MATH_WIDGETS = [
-  { kind: 'number-line', label: 'Number line', icon: 'number-line' },
-  { kind: 'fraction-bars', label: 'Fraction bars', icon: 'fraction-bars' },
-  { kind: 'ten-frame', label: 'Ten-frame', icon: 'ten-frame' },
-  { kind: 'coordinate-grid', label: 'Coordinate grid', icon: 'coordinate-grid' },
-] as const;
-export type MathWidget = typeof MATH_WIDGETS[number]['kind'];
+import { DrawingPoint, DrawingSettings, DrawingTool, drawingOutline } from './whiteboard-drawing';
+import { MATH_WIDGETS, MathWidget } from './whiteboard-math-tools';
+import { WhiteboardMathKitComponent } from './whiteboard-math-kit.component';
+import { WhiteboardAlgebraComponent } from './whiteboard-algebra.component';
+import { WhiteboardAdvancedMathComponent } from './whiteboard-advanced-math.component';
 interface Fraction { numerator: number; denominator: number; }
 type GridPoint = [x: number, y: number];
 type GridDrawing = Omit<DrawingSettings, 'tool'> & { tool: Exclude<DrawingTool, 'text'>; points: GridPoint[] };
@@ -19,9 +15,71 @@ const MAX_GRID_STROKE_POINTS = 80;
 @Component({
   selector: 'app-whiteboard-math',
   standalone: true,
-  imports: [NgTemplateOutlet],
+  imports: [NgTemplateOutlet, WhiteboardMathKitComponent, WhiteboardAlgebraComponent, WhiteboardAdvancedMathComponent],
   template: `
-    @switch (widget()) {
+    @switch (isCoordinateWidget() ? 'coordinate-grid' : widget()) {
+      @case ('2d-shapes') {
+        @if (editable()) {
+          <div class="math-controls">
+            <label>Shape <select aria-label="2D shape" [value]="shapeModel().shape" (change)="setGeometryShape($event)">
+              @for (shape of geometryShapes; track shape) { <option [value]="shape">{{ shape }}</option> }
+            </select></label>
+            <label>{{ shapeModel().shape === 'Circle' ? 'Diameter' : shapeModel().shape === 'Square' ? 'Side' : 'Width' }}
+              <input type="number" aria-label="Shape width" min="15" max="90" [value]="shapeModel().width"
+                (change)="setShapeSize('width', $event)" />%</label>
+            @if (!equalShapeSides()) {
+              <label>Height <input type="number" aria-label="Shape height" min="15" max="90" [value]="shapeModel().height"
+                (change)="setShapeSize('height', $event)" />%</label>
+            }
+            @if (shapeModel().shape === 'Polygon') {
+              <label>Sides <input type="number" aria-label="Shape sides" min="3" max="12" [value]="shapeModel().sides"
+                (change)="setShapeSize('sides', $event)" /></label>
+            }
+          </div>
+          <div class="math-controls" role="group" aria-label="2D Shapes mode">
+            <button type="button" [attr.aria-pressed]="!drawMode()" (click)="setGridMode('points')">Interact</button>
+            <button type="button" [attr.aria-pressed]="drawMode()" (click)="setGridMode('toolbar')">Draw</button>
+            <button type="button" [disabled]="!shapeModel().drawings.length" (click)="undoDrawing()">Undo drawing</button>
+          </div>
+        }
+        <div #drawingFrame class="shape-frame" [class.movable]="editable() && !drawMode()"
+          (pointerdown)="startShapeMove($event)" (pointermove)="moveShape($event)"
+          (pointerup)="finishShapeMove($event)" (pointercancel)="cancelShapeMove()" (lostpointercapture)="cancelShapeMove()">
+          <svg [attr.viewBox]="drawingViewBox()" role="img" [attr.aria-label]="shapeModel().shape + ' preview'">
+            @let geometry = shapeGeometry();
+            @if (geometry.polygon) { <polygon [attr.points]="geometry.polygon" /> }
+            @else { <ellipse [attr.cx]="geometry.x" [attr.cy]="geometry.y" [attr.rx]="geometry.rx" [attr.ry]="geometry.ry" /> }
+          </svg>
+          <ng-container *ngTemplateOutlet="drawingLayer; context: { label: '2D Shapes drawing surface' }" />
+        </div>
+      }
+      @case ('ruler') {
+        @if (editable()) {
+          <div class="math-controls">
+            <label>Angle <input type="number" aria-label="Ruler angle" min="-180" max="180" step="5"
+              [value]="ruler().angle" (change)="setRuler('angle', $event)" /></label>
+            <label>From <input type="number" aria-label="Ruler start" min="0" max="10" step="0.5"
+              [value]="ruler().from" (change)="setRuler('from', $event)" /></label>
+            <label>To <input type="number" aria-label="Ruler end" min="0" max="10" step="0.5"
+              [value]="ruler().to" (change)="setRuler('to', $event)" /></label>
+            <button type="button" [disabled]="ruler().from === ruler().to" (click)="traceRuler(rulerFace)">Trace edge</button>
+          </div>
+        }
+        <div class="ruler-stage" [style.--ruler-angle]="ruler().angle + 'deg'">
+          <svg #rulerFace class="ruler-face" viewBox="0 0 320 50" aria-label="Ruler scale from 0 to 10 units">
+            <rect x="1" y="1" width="318" height="48" rx="5" fill="#fff0b5" stroke="#a18439" />
+            <line [attr.x1]="rulerX(ruler().from)" [attr.x2]="rulerX(ruler().to)" y1="2" y2="2" stroke="#087765" stroke-width="3" />
+            @for (tick of rulerTicks; track tick) {
+              <line [attr.x1]="rulerX(tick / 2)" [attr.x2]="rulerX(tick / 2)" y1="3" [attr.y2]="tick % 2 === 0 ? 19 : 12" stroke="#342a16" />
+              @if (tick % 2 === 0) {
+                <text [attr.x]="rulerX(tick / 2)" y="34" text-anchor="middle" font-size="12">{{ tick / 2 }}</text>
+              }
+            }
+          </svg>
+        </div>
+        <p class="summary">Distance {{ rulerDistance() }} ruler units</p>
+        @if (drawingError()) { <p class="summary" role="status">{{ drawingError() }}</p> }
+      }
       @case ('number-line') {
         @if (editable()) {
           <div class="math-controls">
@@ -39,7 +97,7 @@ const MAX_GRID_STROKE_POINTS = 80;
             <button type="button" [disabled]="!line().drawings.length" (click)="undoDrawing()">Undo drawing</button>
           </div>
         }
-        <div #numberLine class="number-line" role="group" aria-label="Number line ticks">
+        <div #drawingFrame class="number-line" role="group" aria-label="Number line ticks">
           @for (value of ticks(); track $index; let index = $index) {
             <button type="button" class="tick" [disabled]="!editable() || drawMode()"
               [attr.aria-label]="'Mark ' + value + ' on number line'" [attr.aria-pressed]="line().marks.includes(index)"
@@ -140,6 +198,28 @@ const MAX_GRID_STROKE_POINTS = 80;
           <p class="summary">{{ grid().points.length ? 'Plotted points ' + pointList() : 'Select intersections to plot points.' }}</p>
         }
       }
+      @default {
+        @if (editable()) {
+          <div class="math-controls" role="group" aria-label="Maths activity mode">
+            <button type="button" [attr.aria-pressed]="!drawMode()" (click)="setGridMode('points')">Interact</button>
+            <button type="button" [attr.aria-pressed]="drawMode()" (click)="setGridMode('toolbar')">Draw</button>
+            <button type="button" [disabled]="!activityDrawings().length" (click)="undoDrawing()">Undo drawing</button>
+          </div>
+        }
+        <div #drawingFrame class="activity-frame">
+          @if (isAdvancedActivity()) {
+            <app-whiteboard-advanced-math [widget]="widget()" [text]="text()" [editable]="editable()"
+              [attr.inert]="drawMode() ? '' : null" (changed)="save($event)" />
+          } @else if (isAlgebraActivity()) {
+            <app-whiteboard-algebra [widget]="widget()" [text]="text()" [editable]="editable()"
+              [attr.inert]="drawMode() ? '' : null" (changed)="save($event)" />
+          } @else {
+            <app-whiteboard-math-kit [widget]="widget()" [text]="text()" [editable]="editable()"
+              [attr.inert]="drawMode() ? '' : null" (changed)="save($event)" />
+          }
+          <ng-container *ngTemplateOutlet="drawingLayer; context: { label: 'Maths activity drawing surface' }" />
+        </div>
+      }
     }
     <ng-template #drawingLayer let-label="label">
       <svg #drawingSurface class="grid-drawing" [attr.viewBox]="drawingViewBox()" preserveAspectRatio="none" [class.active]="editable() && drawMode()"
@@ -148,7 +228,9 @@ const MAX_GRID_STROKE_POINTS = 80;
         (pointerup)="finishGridDrawing($event, drawingSurface)" (pointercancel)="cancelGridDrawing()"
         (lostpointercapture)="cancelGridDrawing()">
         @for (mark of renderedDrawings(); track $index) {
-          <path [class.grid-stroke]="widget() === 'coordinate-grid'" [class.number-line-stroke]="widget() === 'number-line'"
+          <path [class.grid-stroke]="isCoordinateWidget()" [class.number-line-stroke]="widget() === 'number-line'"
+            [class.geometry-stroke]="widget() === '2d-shapes'"
+            [class.activity-stroke]="!isCoordinateWidget() && !['number-line','2d-shapes'].includes(widget())"
             [attr.data-tool]="mark.tool" [attr.d]="gridOutline(mark)"
             [attr.stroke]="mark.color" [attr.stroke-width]="mark.width"
             [attr.stroke-dasharray]="gridDash(mark)" [attr.opacity]="mark.tool === 'highlighter' ? 0.45 : 1"
@@ -170,6 +252,13 @@ const MAX_GRID_STROKE_POINTS = 80;
     .math-controls button:disabled { opacity: .55; cursor: default; }
     button:focus-visible { outline: 2px solid #164883; outline-offset: -2px; }
     .summary { margin: 5px 0 0; overflow-wrap: anywhere; }
+    .shape-frame { position: relative; min-height: 120px; height: clamp(120px, 55%, 280px); border: 1px solid #c7d5e8; border-radius: 6px; background: #f9fbff; overflow: hidden; }
+    .shape-frame.movable { cursor: grab; touch-action: none; }
+    .shape-frame > svg:not(.grid-drawing) { display: block; width: 100%; height: 100%; pointer-events: none; }
+    .shape-frame polygon, .shape-frame ellipse { fill: #b7d5f6; stroke: #315d92; stroke-width: 2; }
+    .activity-frame { position: relative; min-height: 75px; }
+    .ruler-stage { display: grid; place-items: center; min-height: 125px; }
+    .ruler-face { width: min(85%, 320px); transform: rotate(var(--ruler-angle)); overflow: visible; }
     .number-line { position: relative; display: flex; width: max-content; min-width: 100%; padding-block: 4px; }
     .number-line::before { content: ''; position: absolute; inset: 25px 8px auto; border-top: 2px solid #405985; }
     .tick { position: relative; flex: 1; min-width: 39px; min-height: 52px; padding: 31px 2px 0; border: 0;
@@ -209,26 +298,78 @@ const MAX_GRID_STROKE_POINTS = 80;
 })
 export class WhiteboardMathComponent {
   readonly widget = input.required<MathWidget>();
+  readonly isCoordinateWidget = computed(() => this.widget() === 'coordinate-grid' || this.widget() === 'point-plotter');
+  private readonly widgetSection = computed(() => MATH_WIDGETS.find(tool => tool.kind === this.widget())?.section ?? 0);
+  readonly isAlgebraActivity = computed(() => this.widgetSection() === 4 || this.widgetSection() === 5);
+  readonly isAdvancedActivity = computed(() => this.widgetSection() >= 6);
   readonly text = input.required<string>();
   readonly editable = input(false);
   readonly drawingSettings = input<DrawingSettings>();
   readonly changed = output<string>();
+  readonly traced = output<DrawingPoint[]>();
   private readonly state = computed(() => readActivityState(this.text()));
   readonly tenCells = this.range(10);
   readonly focusPoint = signal('0:0');
   readonly gridMode = signal<'points' | 'line' | 'toolbar'>('points');
   readonly gridSizeDraft = signal<number | null>(null);
   readonly drawMode = computed(() => this.gridMode() !== 'points');
-  private readonly numberLine = viewChild<ElementRef<HTMLElement>>('numberLine');
-  private readonly numberLineSize = signal({ width: 100, height: 100 });
+  private readonly drawingFrame = viewChild<ElementRef<HTMLElement>>('drawingFrame');
+  private readonly frameSize = signal({ width: 100, height: 100 });
   readonly drawingViewBox = computed(() => {
-    if (this.widget() !== 'number-line') return '0 0 100 100';
-    const { width, height } = this.numberLineSize();
+    if (this.isCoordinateWidget()) return '0 0 100 100';
+    const { width, height } = this.frameSize();
     return '0 0 ' + width + ' ' + height;
   });
   readonly drawingError = signal('');
   private readonly gridDraft = signal<GridDrawing | null>(null);
   private drawingPointer?: number;
+  readonly geometryShapes = ['Square', 'Circle', 'Triangle', 'Polygon', 'Rectangle', 'Ellipse', 'Pentagon', 'Hexagon'] as const;
+  private readonly shapeDraft = signal<GridPoint | null>(null);
+  private shapePointer?: number;
+  readonly rulerTicks = this.range(21);
+  readonly shapeModel = computed(() => {
+    const state = this.state();
+    return {
+      shape: this.geometryShapes.find(value => value === state['shape']) ?? 'Square',
+      width: this.bounded(state['width'], 55, 15, 90),
+      height: this.bounded(state['height'], 60, 15, 90),
+      sides: this.bounded(state['sides'], 5, 3, 12),
+      x: this.bounded(state['x'], 0.5, 0.05, 0.95, 3),
+      y: this.bounded(state['y'], 0.5, 0.05, 0.95, 3),
+      drawings: this.readGridDrawings(state['drawings']),
+    };
+  });
+  readonly equalShapeSides = computed(() => this.shapeModel().shape === 'Circle' || this.shapeModel().shape === 'Square');
+  readonly shapeGeometry = computed(() => {
+    const shape = this.shapeModel();
+    const { width, height } = this.frameSize();
+    const [cx, cy] = this.shapeDraft() ?? [shape.x, shape.y];
+    const radiusX = shape.width / 200 * width;
+    const radiusY = shape.height / 200 * height;
+    const rx = this.equalShapeSides() ? shape.width / 200 * Math.min(width, height) : radiusX;
+    const ry = this.equalShapeSides() ? rx : radiusY;
+    const x = Math.max(rx, Math.min(width - rx, cx * width));
+    const y = Math.max(ry, Math.min(height - ry, cy * height));
+    let polygon = '';
+    if (shape.shape === 'Rectangle' || shape.shape === 'Square') polygon = `${x - rx},${y - ry} ${x + rx},${y - ry} ${x + rx},${y + ry} ${x - rx},${y + ry}`;
+    else if (shape.shape !== 'Circle' && shape.shape !== 'Ellipse') {
+      const sides = shape.shape === 'Polygon' ? shape.sides : shape.shape === 'Triangle' ? 3 : shape.shape === 'Pentagon' ? 5 : 6;
+      polygon = this.range(sides).map(index => {
+        const angle = index * Math.PI * 2 / sides - Math.PI / 2;
+        return `${x + Math.cos(angle) * rx},${y + Math.sin(angle) * ry}`;
+      }).join(' ');
+    }
+    return { x, y, rx, ry, polygon };
+  });
+  readonly ruler = computed(() => {
+    const state = this.state();
+    return {
+      angle: this.bounded(state['angle'], 0, -180, 180),
+      from: this.bounded(state['from'], 0, 0, 10, 1),
+      to: this.bounded(state['to'], 10, 0, 10, 1),
+    };
+  });
+  readonly rulerDistance = computed(() => Number(Math.abs(this.ruler().to - this.ruler().from).toFixed(1)));
 
   readonly line = computed(() => {
     const state = this.state();
@@ -270,7 +411,13 @@ export class WhiteboardMathComponent {
   });
   readonly plottedPoints = computed(() => new Set(this.grid().points.map(point => point.join(':'))));
   readonly pointList = computed(() => this.grid().points.map(point => this.coordinates(point)).join(', '));
-  private readonly drawingState = computed(() => this.widget() === 'number-line' ? this.line() : this.grid());
+  readonly activityDrawings = computed(() => this.readGridDrawings(this.state()['drawings']));
+  private readonly drawingState = computed(() => {
+    if (this.widget() === 'number-line') return this.line();
+    if (this.widget() === '2d-shapes') return this.shapeModel();
+    if (this.isCoordinateWidget()) return this.grid();
+    return { ...this.state(), drawings: this.activityDrawings() };
+  });
   readonly renderedDrawings = computed(() => {
     const draft = this.gridDraft();
     const { drawings } = this.drawingState();
@@ -279,15 +426,85 @@ export class WhiteboardMathComponent {
 
   constructor() {
     effect(cleanup => {
-      const element = this.numberLine()?.nativeElement;
+      const element = this.drawingFrame()?.nativeElement;
       if (!element) return;
       const observer = new ResizeObserver(([entry]) => {
         const { width, height } = entry.target.getBoundingClientRect();
-        if (width > 0 && height > 0) this.numberLineSize.set({ width, height });
+        if (width > 0 && height > 0) this.frameSize.set({ width, height });
       });
       observer.observe(element);
       cleanup(() => observer.disconnect());
     });
+  }
+
+  setGeometryShape(event: Event): void {
+    const shape = (event.target as HTMLSelectElement).value;
+    if (this.geometryShapes.some(value => value === shape)) this.save({ ...this.shapeModel(), shape });
+  }
+
+  setShapeSize(key: 'width' | 'height' | 'sides', event: Event): void {
+    const input = event.target as HTMLInputElement;
+    const size = this.bounded(input.valueAsNumber, this.shapeModel()[key], Number(input.min), Number(input.max));
+    input.value = String(size);
+    this.save({ ...this.shapeModel(), [key]: size });
+  }
+
+  startShapeMove(event: PointerEvent): void {
+    if (!this.editable() || this.drawMode() || event.button !== 0 || this.shapePointer !== undefined) return;
+    event.preventDefault();
+    this.shapePointer = event.pointerId;
+    (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
+    this.moveShape(event);
+  }
+
+  moveShape(event: PointerEvent): void {
+    if (event.pointerId !== this.shapePointer) return;
+    const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+    this.shapeDraft.set([
+      this.bounded((event.clientX - rect.left) / rect.width, 0.5, 0.05, 0.95, 3),
+      this.bounded((event.clientY - rect.top) / rect.height, 0.5, 0.05, 0.95, 3),
+    ]);
+  }
+
+  finishShapeMove(event: PointerEvent): void {
+    if (event.pointerId !== this.shapePointer) return;
+    this.moveShape(event);
+    const position = this.shapeDraft();
+    if (position) this.save({ ...this.shapeModel(), x: position[0], y: position[1] });
+    this.cancelShapeMove();
+  }
+
+  cancelShapeMove(): void {
+    this.shapePointer = undefined;
+    this.shapeDraft.set(null);
+  }
+
+  rulerX(value: number): number {
+    return 12 + value * 29.6;
+  }
+
+  setRuler(key: 'angle' | 'from' | 'to', event: Event): void {
+    const input = event.target as HTMLInputElement;
+    const value = this.bounded(input.valueAsNumber, this.ruler()[key], Number(input.min), Number(input.max), key === 'angle' ? 0 : 1);
+    input.value = String(value);
+    this.drawingError.set('');
+    this.save({ ...this.ruler(), [key]: value });
+  }
+
+  traceRuler(face: Element): void {
+    const matrix = (face as SVGSVGElement).getScreenCTM();
+    const surface = face.closest('.surface')?.getBoundingClientRect();
+    if (!this.editable() || !matrix || !surface?.width || !surface.height || this.ruler().from === this.ruler().to) return;
+    const points = [this.ruler().from, this.ruler().to].map(value => {
+      const point = new DOMPoint(this.rulerX(value), 2).matrixTransform(matrix);
+      return { x: (point.x - surface.left) / surface.width, y: (point.y - surface.top) / surface.height };
+    });
+    if (points.some(point => point.x < 0 || point.x > 1 || point.y < 0 || point.y > 1)) {
+      this.drawingError.set('Move the ruler edge inside the whiteboard to trace it.');
+      return;
+    }
+    this.drawingError.set('');
+    this.traced.emit(points);
   }
 
   range(count: number): number[] {
@@ -414,9 +631,13 @@ export class WhiteboardMathComponent {
   gridOutline(mark: GridDrawing): string {
     if (this.widget() === 'number-line') {
       const { start, step, intervals } = this.line();
-      const { width, height } = this.numberLineSize();
+      const { width, height } = this.frameSize();
       const points = mark.points.map(([x, y]) => ({ x: ((x - start) / step + 0.5) / (intervals + 1), y }));
       return drawingOutline(mark.tool, points, width, height, 12);
+    }
+    if (!this.isCoordinateWidget()) {
+      const { width, height } = this.frameSize();
+      return drawingOutline(mark.tool, mark.points.map(([x, y]) => ({ x, y })), width, height, 12);
     }
     const edge = this.grid().limit + 0.5;
     return drawingOutline(mark.tool, mark.points.map(([x, y]) => ({ x: (x + edge) / (edge * 2), y: (edge - y) / (edge * 2) })), 100, 100, 5);
@@ -438,6 +659,7 @@ export class WhiteboardMathComponent {
       const minimum = start - step / 2;
       return [this.bounded(minimum + x * span, start, minimum, minimum + span, 4), this.bounded(y, 0.5, 0, 1, 4)];
     }
+    if (!this.isCoordinateWidget()) return [this.bounded(x, 0.5, 0, 1, 4), this.bounded(y, 0.5, 0, 1, 4)];
     const edge = this.grid().limit + 0.5;
     return [
       this.bounded((x * 2 - 1) * edge, 0, -edge, edge, 2),
@@ -456,7 +678,8 @@ export class WhiteboardMathComponent {
       const points: GridPoint[] = mark.points.slice(0, MAX_GRID_STROKE_POINTS).filter((point: unknown): point is GridPoint =>
         Array.isArray(point) && point.length === 2 && point.every(Number.isFinite) &&
         (this.widget() === 'number-line' ? Math.abs(point[0]) <= 3050 && point[1] >= 0 && point[1] <= 1
-          : point.every(coord => Math.abs(coord) <= 6.5)));
+          : this.isCoordinateWidget() ? point.every(coord => Math.abs(coord) <= 6.5)
+            : point.every(coord => coord >= 0 && coord <= 1)));
       if (!points.length) return [];
       const color = typeof mark.color === 'string' && /^#[a-f0-9]{6}$/i.test(mark.color) ? mark.color : '#004c45';
       const strokeStyle = mark.strokeStyle === 'dotted' || mark.strokeStyle === 'dashed' ? mark.strokeStyle : 'solid';

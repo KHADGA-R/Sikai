@@ -8,7 +8,7 @@ import { FlowPreview, NoteKind, NotePatch, StickyNote, WhiteboardNoteComponent }
 import { ThemeIconComponent } from '../shared/theme-icon.component';
 import { ClassroomVideoComponent } from './classroom-video.component';
 import { CalculatorPreview, WhiteboardCalculatorComponent } from './whiteboard-calculator.component';
-import { MATH_WIDGETS, MathWidget } from './whiteboard-math.component';
+import { MATH_GRADES, MATH_SECTIONS, MATH_WIDGETS, MathWidget } from './whiteboard-math-tools';
 import { DrawingSettings, DrawingTool, Shape, StrokeStyle, drawingOutline } from './whiteboard-drawing';
 import type { ClassroomView } from './classroom-video.component';
 
@@ -33,6 +33,10 @@ interface Board {
   supportsFlowPreviews?: boolean;
   supportsActivityWidgets?: boolean;
   supportsMathWidgets?: boolean;
+  supportsGeometryWidgets?: boolean;
+  supportsExpandedMathWidgets?: boolean;
+  supportsAlgebraWidgets?: boolean;
+  supportsAdvancedMathWidgets?: boolean;
   supportsCalculatorPreviews?: boolean;
   supportsHistogram?: boolean;
 }
@@ -80,7 +84,19 @@ export class WhiteboardComponent {
     { kind: 'flowchart', label: 'Flowchart', icon: 'flowchart' },
     { kind: 'timer', label: 'Countdown timer', icon: 'timer' },
   ] as const;
-  readonly mathsTools = MATH_WIDGETS;
+  readonly mathGrades = MATH_GRADES;
+  readonly mathGrade = signal(0);
+  readonly mathSearch = signal('');
+  readonly visibleMaths = computed(() => {
+    const grade = MATH_GRADES[this.mathGrade()] ?? MATH_GRADES[0];
+    const query = this.mathSearch().trim().toLowerCase();
+    return MATH_SECTIONS.map((label, section) => ({
+      label, section, tools: MATH_WIDGETS.filter(tool => tool.section === section &&
+        tool.grades[0] <= grade.max && tool.grades[1] >= grade.min &&
+        (!query || tool.label.toLowerCase().includes(query) ||
+          (tool.kind === 'bar-pie-charts' && 'bar graph pie chart'.includes(query)))),
+    })).filter(group => group.tools.length);
+  });
   readonly strokeStyles = [
     { value: 'solid', label: 'Solid' }, { value: 'dashed', label: 'Dashed' }, { value: 'dotted', label: 'Dotted' },
   ] as const;
@@ -159,9 +175,11 @@ export class WhiteboardComponent {
   });
   readonly slidesOpen = signal(true);
   readonly calculatorOpen = signal(false);
+  readonly calculatorMode = signal<'standard' | 'scientific'>('standard');
   readonly sharedCalculator = signal<CalculatorPreview | null>(null);
   private localCalculator: CalculatorPreview | null = null;
-  readonly boardSidebarOpen = computed(() => this.slidesOpen() || this.calculatorOpen() || !!this.sharedCalculator());
+  readonly mathsOpen = signal(false);
+  readonly boardSidebarOpen = computed(() => this.slidesOpen() || this.mathsOpen() || this.calculatorOpen() || !!this.sharedCalculator());
   readonly calculatorSharingAvailable = computed(() => {
     const room = this.board();
     const now = this.now();
@@ -480,6 +498,10 @@ export class WhiteboardComponent {
     });
   }
 
+  traceMathLine(points: Point[]): void {
+    void this.save({ tool: 'line', points, color: this.color(), label: '', strokeStyle: this.strokeStyle(), strokeWidth: 4 });
+  }
+
   async undo(): Promise<void> {
     const mark = this.lastOwnMark();
     if (mark) await this.removeMark(mark.id);
@@ -539,21 +561,20 @@ export class WhiteboardComponent {
     menu.open = false;
   }
 
-  showToolMenu(show: HTMLElement, hide: HTMLElement): void {
-    show.hidden = false;
-    show.querySelector('button')?.focus();
-    hide.hidden = true;
-  }
-
-  resetSubjectMenu(menu: HTMLDetailsElement, subjects: HTMLElement, activities: HTMLElement): void {
-    if (menu.open) return;
-    subjects.hidden = false;
-    activities.hidden = true;
-  }
-
   insertMathTool(kind: MathWidget): void {
-    if (this.board()?.supportsMathWidgets) this.addNote('yellow', 'graph', false, kind);
+    const room = this.board();
+    const existing = kind === 'number-line' || kind === 'fraction-bars' || kind === 'ten-frame' || kind === 'coordinate-grid';
+    const section = MATH_WIDGETS.find(tool => tool.kind === kind)?.section ?? 0;
+    const supported = section >= 6 ? room?.supportsAdvancedMathWidgets
+      : section >= 4 && kind !== 'coordinate-grid' ? room?.supportsAlgebraWidgets : existing ? room?.supportsMathWidgets
+      : kind === 'ruler' || kind === '2d-shapes' ? room?.supportsGeometryWidgets : room?.supportsExpandedMathWidgets;
+    if (supported) this.addNote('yellow', 'graph', false, kind);
     else this.error.set('Restart the Sikai backend with the current code, then reload to use Maths tools.');
+  }
+
+  openScientificCalculator(): void {
+    this.calculatorMode.set('scientific');
+    this.calculatorOpen.set(true);
   }
 
   insertLearningTool(kind: typeof this.insertTools[number]['kind']): void {

@@ -1,8 +1,9 @@
 import { Component, DestroyRef, ElementRef, afterEveryRender, computed, effect, inject, input, output, signal } from '@angular/core';
 import { NgTemplateOutlet } from '@angular/common';
 import { ActivityWidget, readActivityState, WhiteboardActivityComponent } from './whiteboard-activity.component';
-import { MATH_WIDGETS, WhiteboardMathComponent } from './whiteboard-math.component';
-import { DrawingSettings } from './whiteboard-drawing';
+import { WhiteboardMathComponent } from './whiteboard-math.component';
+import { isMathShortcut, MATH_WIDGETS } from './whiteboard-math-tools';
+import { DrawingPoint, DrawingSettings } from './whiteboard-drawing';
 
 export interface NoteBounds { x: number; y: number; width: number; height: number; }
 export type NoteKind = 'sticky' | 'table' | 'graph' | 'flowchart';
@@ -164,7 +165,7 @@ interface LearningObjectContent {
       } @else if (mathWidget()) {
         <app-whiteboard-math [widget]="mathWidget()!.kind" [text]="note().text" [editable]="editable()"
           [drawingSettings]="gridDrawingSettings()"
-          (changed)="changed.emit({ text: $event })" />
+          (changed)="changed.emit({ text: $event })" (traced)="traced.emit($event)" />
       } @else {
       <div class="object-controls">
         @if (content().histogram) {
@@ -441,6 +442,7 @@ export class WhiteboardNoteComponent {
   readonly preview = input<FlowPreview | null>(null);
   readonly previewChanged = output<FlowPreview | null>();
   readonly changed = output<NotePatch>();
+  readonly traced = output<DrawingPoint[]>();
   readonly removed = output<void>();
   readonly flowPlaceholders = ['Start', 'Next step', 'Finish'];
   readonly maxFlowNodes = MAX_FLOW_NODES;
@@ -466,7 +468,10 @@ export class WhiteboardNoteComponent {
   readonly bounds = computed(() => (this.editable() ? this.draft() : this.preview()?.bounds) ?? this.note());
   readonly kind = computed(() => this.note().kind ?? 'sticky');
   readonly widgetName = computed(() => this.kind() === 'graph' ? readActivityState(this.note().text)['widget'] : null);
-  readonly mathWidget = computed(() => MATH_WIDGETS.find(tool => tool.kind === this.widgetName()) ?? null);
+  readonly mathWidget = computed(() => {
+    const tool = MATH_WIDGETS.find(item => item.kind === this.widgetName());
+    return !tool || isMathShortcut(tool.kind) ? null : { ...tool, kind: tool.kind };
+  });
   readonly widget = computed<ActivityWidget | null>(() => {
     const widget = this.widgetName();
     return widget === 'pie' || widget === 'timer' ? widget : null;
@@ -476,7 +481,7 @@ export class WhiteboardNoteComponent {
     : ({ sticky: 'sticky note', table: 'table', graph: 'bar graph', flowchart: 'flowchart' })[this.kind()]));
   readonly title = computed(() => this.kind() === 'sticky'
     ? this.note().authorName
-    : this.label().replace(/^./, char => char.toUpperCase()) + ' · ' + this.note().authorName);
+    : (this.mathWidget()?.label ?? this.label().replace(/^./, char => char.toUpperCase())) + ' · ' + this.note().authorName);
   readonly content = computed<LearningObjectContent>(() => {
     let saved: Partial<LearningObjectContent> = {};
     const text = this.editable() ? this.note().text : this.preview()?.text ?? this.note().text;

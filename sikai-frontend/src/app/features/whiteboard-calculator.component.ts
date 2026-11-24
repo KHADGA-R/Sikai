@@ -123,6 +123,7 @@ export interface CalculatorPreview {
 export class WhiteboardCalculatorComponent {
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
   readonly shared = input<CalculatorPreview | null>(null);
+  readonly initialMode = input<'standard' | 'scientific'>('standard');
   readonly sharingAvailable = input(false);
   readonly sharingUnavailable = input('');
   readonly sharing = signal(true);
@@ -153,6 +154,7 @@ export class WhiteboardCalculatorComponent {
   private pointer?: { id: number; x: number; y: number; origin: PanelPosition };
 
   constructor() {
+    effect(() => this.mode.set(this.initialMode()));
     effect(() => {
       this.previewChanged.emit(this.sharingAvailable() && this.sharing() ? {
         expression: this.expression(), calculation: this.calculation(), error: this.error(),

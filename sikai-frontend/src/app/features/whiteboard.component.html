@@ -31,13 +31,13 @@
     <div #classroomLayout class="board-layout" [class.split-view]="videoOpen() && classroomView() === 'split'"
       [class.camera-first]="videoOpen() && classroomView() === 'whiteboard'" [style.--board-width]="boardShare() + '%'">
       @if (whiteboardOpen()) {
-      <section class="panel board-workspace" [class.slides-collapsed]="!boardSidebarOpen()"
+      <section class="panel board-workspace" [class.slides-collapsed]="!boardSidebarOpen()" [class.maths-open]="mathsOpen()"
         [hidden]="videoOpen() && classroomView() === 'presentation'">
       <div class="whiteboard-panel-heading">
         <h2>Whiteboard</h2>
         <div class="board-panel-actions">
           <button type="button" class="slides-toggle calculator-toggle" [attr.aria-expanded]="calculatorOpen()"
-            (click)="calculatorOpen.set(!calculatorOpen())">
+            (click)="calculatorMode.set('standard'); calculatorOpen.set(!calculatorOpen())">
             <app-theme-icon name="calculator" /> Calculator
           </button>
           <button type="button" class="slides-toggle" [attr.aria-expanded]="slidesOpen()" (click)="slidesOpen.set(!slidesOpen())">
@@ -46,6 +46,45 @@
         </div>
       </div>
       <div class="board-sidebar" [hidden]="!boardSidebarOpen()">
+      @if (mathsOpen()) {
+        <aside class="maths-sidebar" aria-label="Maths tools">
+          <div class="maths-heading">
+            <h2>Maths</h2>
+            <button type="button" aria-label="Close Maths tools" (click)="mathsOpen.set(false)">×</button>
+          </div>
+          <input class="math-search" type="search" aria-label="Search Maths tools" placeholder="Search tools"
+            [value]="mathSearch()" (input)="mathSearch.set($any($event.target).value)" />
+          <label class="math-grade">Grade <select aria-label="Filter Maths tools by grade" [value]="mathGrade()"
+            (change)="mathGrade.set(+$any($event.target).value)">
+            @for (grade of mathGrades; track grade.label; let index = $index) { <option [value]="index">{{ grade.label }}</option> }
+          </select></label>
+          <div class="maths-categories">
+          @for (group of visibleMaths(); track group.label) {
+            <details [open]="group.section === 0 || !!mathSearch().trim()">
+              <summary>{{ group.label }} <span class="tool-count">{{ group.tools.length }}</span></summary>
+              @for (item of group.tools; track item.kind) {
+                @if (item.kind === 'bar-pie-charts') {
+                  <details class="math-chart-choices">
+                    <summary>{{ item.label }}</summary>
+                    <button type="button" (click)="insertLearningTool('graph')"><app-theme-icon name="bar-graph" />Bar graph</button>
+                    <button type="button" (click)="insertLearningTool('pie')"><app-theme-icon name="pie" />Pie chart</button>
+                  </details>
+                } @else if (item.kind === 'reuse-bar-graph' || item.kind === 'reuse-histogram') {
+                  <button type="button" (click)="insertLearningTool(item.kind === 'reuse-bar-graph' ? 'graph' : 'histogram')">
+                    <app-theme-icon [name]="item.icon" />{{ item.label }}
+                  </button>
+                } @else if (item.kind === 'scientific-calculator') {
+                  <button type="button" (click)="openScientificCalculator()"><app-theme-icon [name]="item.icon" />{{ item.label }}</button>
+                } @else {
+                  <button type="button" (click)="insertMathTool(item.kind)"><app-theme-icon [name]="item.icon" />{{ item.label }}</button>
+                }
+              }
+            </details>
+          }
+          @if (!visibleMaths().length) { <p class="board-note">No matching tools.</p> }
+          </div>
+        </aside>
+      }
       <aside class="slides" [hidden]="!slidesOpen()">
         <h2>Slides</h2>
         <nav aria-label="Whiteboard slides">
@@ -70,6 +109,7 @@
       @if (calculatorOpen()) {
         <app-whiteboard-calculator [sharingAvailable]="calculatorSharingAvailable()"
           [sharingUnavailable]="calculatorSharingUnavailable()"
+          [initialMode]="calculatorMode()"
           (previewChanged)="setCalculatorPreview($event)" (closed)="calculatorOpen.set(false)" />
       }
       </div>
@@ -120,30 +160,18 @@
           </details>
           <details #subjectMenu class="insert-menu"
             (focusout)="!subjectMenu.contains($any($event.relatedTarget)) && (subjectMenu.open = false)"
-            (keydown.escape)="closeToolbarMenu(subjectMenu, subjectTrigger)"
-            (toggle)="resetSubjectMenu(subjectMenu, subjects, maths)">
+            (keydown.escape)="closeToolbarMenu(subjectMenu, subjectTrigger)">
             <summary #subjectTrigger class="tool-select insert-trigger" aria-label="Subject tools">
               <app-theme-icon name="shapes" />
               Tools
               <app-theme-icon class="insert-chevron" name="chevron" />
             </summary>
             <div class="insert-options subject-options">
-              <div #subjects class="subject-list">
-                <button type="button" (click)="showToolMenu(maths, subjects)">
+              <div class="subject-list">
+                <button type="button" [attr.aria-pressed]="mathsOpen()" (click)="closeToolbarMenu(subjectMenu, subjectTrigger); mathsOpen.set(!mathsOpen())">
                   <app-theme-icon name="calculator" /> Maths
                   <app-theme-icon class="subject-next" name="chevron" />
                 </button>
-              </div>
-              <div #maths class="subject-list" hidden>
-                <button type="button" class="subject-back" aria-label="Back to subjects" (click)="showToolMenu(subjects, maths)">
-                  <app-theme-icon class="subject-previous" name="chevron" /> Maths
-                </button>
-                @for (item of mathsTools; track item.kind) {
-                  <button type="button" (click)="closeToolbarMenu(subjectMenu, subjectTrigger); insertMathTool(item.kind)">
-                    <app-theme-icon [name]="item.icon" />
-                    {{ item.label }}
-                  </button>
-                }
               </div>
             </div>
           </details>
@@ -239,6 +267,7 @@
           @for (note of notes(); track note.id) {
             <app-whiteboard-note [note]="note" [editable]="note.authorId === userId()"
               [gridDrawingSettings]="gridDrawingSettings()"
+              (traced)="traceMathLine($event)"
               [preview]="flowPreviews()[note.id] ?? null" (previewChanged)="setFlowPreview(note.id, $event)"
               (changed)="changeNote(note.id, $event)" (removed)="deleteNote(note.id)" />
           }
