@@ -414,6 +414,36 @@ test('live teacher availability, student booking, messaging, meeting link and ca
     await expect(student.getByLabel('Bin 2 frequency')).toHaveValue('7');
     await expect(student.getByRole('img', { name: 'Frequency axis from 0 to 8' })).toBeVisible();
     await expect(student.getByText('5 to <10', { exact: true })).toBeVisible();
+    await insert.click();
+    await page.getByRole('button', { name: 'Pie chart', exact: true }).click();
+    await page.getByLabel('Slice 1 label', { exact: true }).fill('Practice');
+    await page.getByLabel('Slice 1 size', { exact: true }).fill('3');
+    await page.getByLabel('Slice 1 size', { exact: true }).press('Tab');
+    const pie = student.getByRole('list', { name: 'Pie chart slices' });
+    await expect(pie.getByRole('listitem').first()).toContainText('Practice');
+    await expect(pie.getByRole('listitem').first()).toContainText('50%');
+    await page.getByRole('button', { name: 'Split slice 1', exact: true }).click();
+    await expect(pie.getByRole('listitem')).toHaveCount(5);
+    await expect(pie.getByRole('listitem').first()).toContainText('25%');
+
+    await insert.click();
+    await page.getByRole('button', { name: 'Countdown timer', exact: true }).click();
+    const timer = page.locator('app-whiteboard-activity').filter({ has: page.getByRole('timer') });
+    const sharedTimer = student.locator('app-whiteboard-activity').filter({ has: student.getByRole('timer') });
+    await timer.getByLabel('Timer duration in seconds').fill('30');
+    await timer.getByLabel('Timer duration in seconds').press('Tab');
+    await timer.getByRole('button', { name: 'Start', exact: true }).click();
+    await expect(sharedTimer.getByText('Running', { exact: true })).toBeVisible();
+    const tenSecondsLater = new Date(currentClassTime.getTime() + 10_000);
+    await page.clock.setFixedTime(tenSecondsLater);
+    await student.clock.setFixedTime(tenSecondsLater);
+    await expect(sharedTimer.getByRole('timer')).toHaveText('0:20');
+    await timer.getByRole('button', { name: 'Pause', exact: true }).click();
+    await expect(sharedTimer.getByText('Paused', { exact: true })).toBeVisible();
+    await timer.getByRole('button', { name: 'Resume', exact: true }).click();
+    await expect(sharedTimer.getByText('Running', { exact: true })).toBeVisible();
+    await timer.getByRole('button', { name: 'Reset', exact: true }).click();
+    await expect(sharedTimer.getByRole('timer')).toHaveText('0:30');
     await student.getByRole('link', { name: 'Back to live classes' }).click();
     await student.route('**/api/live-classes/slots/*/join', route => route.fulfill({
       status: 404, json: { message: 'Endpoint not found' },

@@ -54,6 +54,7 @@ public class WhiteboardService {
             Map.entry("supportsLearningObjects", true),
             Map.entry("supportsHistogram", true),
             Map.entry("supportsFlowPreviews", true),
+            Map.entry("supportsActivityWidgets", true),
             Map.entry("slides", slides), Map.entry("marks", marks), Map.entry("erasures", erasures), Map.entry("notes", notes));
     }
 
@@ -136,7 +137,9 @@ public class WhiteboardService {
         String kind = input.kind() == null ? "sticky" : input.kind();
         boolean sticky = kind.equals("sticky");
         Db.require(!input.histogram() || kind.equals("graph"), BAD_REQUEST, "A histogram must use the graph tool");
-        String content = input.histogram() ? "{\"histogram\":true}" : "";
+        Db.require(input.widget() == null || kind.equals("graph") && !input.histogram(), BAD_REQUEST, "Invalid whiteboard widget");
+        String content = input.widget() != null ? "{\"widget\":\"" + input.widget() + "\"}"
+            : input.histogram() ? "{\"histogram\":true}" : "";
         db.update("""
             INSERT INTO live_board_note(id,slot_id,slide_id,author_id,color,kind,note_text,left_pos,top_pos,note_width,note_height,revision)
             VALUES (?,?,?,?,?,?,?,?,?,?,?,?)

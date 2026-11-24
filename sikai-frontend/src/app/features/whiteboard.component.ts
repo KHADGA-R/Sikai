@@ -30,6 +30,7 @@ interface Board {
   erasures?: { markId: string; gestureId: string; points: string; radius?: number }[];
   notes?: StickyNote[];
   supportsFlowPreviews?: boolean;
+  supportsActivityWidgets?: boolean;
   supportsHistogram?: boolean;
 }
 
@@ -72,7 +73,9 @@ export class WhiteboardComponent {
     { kind: 'table', label: 'Table', icon: 'table' },
     { kind: 'graph', label: 'Bar graph', icon: 'bar-graph' },
     { kind: 'histogram', label: 'Histogram', icon: 'histogram' },
+    { kind: 'pie', label: 'Pie chart', icon: 'pie' },
     { kind: 'flowchart', label: 'Flowchart', icon: 'flowchart' },
+    { kind: 'timer', label: 'Countdown timer', icon: 'timer' },
   ] as const;
   readonly strokeStyles = [
     { value: 'solid', label: 'Solid' }, { value: 'dashed', label: 'Dashed' }, { value: 'dotted', label: 'Dotted' },
@@ -499,10 +502,10 @@ export class WhiteboardComponent {
     await this.write(async () => { await this.api.request('DELETE', this.resource + '/marks/' + id); });
   }
 
-  addNote(color: StickyNote['color'], kind: NoteKind = 'sticky', histogram = false): void {
+  addNote(color: StickyNote['color'], kind: NoteKind = 'sticky', histogram = false, widget?: 'pie' | 'timer'): void {
     const slideId = this.selected().id;
     this.queueNoteWrite(async () => {
-      await this.api.request('POST', this.resource + '/notes', { slideId, color, kind, histogram });
+      await this.api.request('POST', this.resource + '/notes', { slideId, color, kind, histogram, widget });
     });
   }
 
@@ -530,11 +533,16 @@ export class WhiteboardComponent {
   }
 
   insertLearningTool(kind: typeof this.insertTools[number]['kind']): void {
-    if (!this.board()?.supportsHistogram) {
+    const widget = kind === 'pie' || kind === 'timer' ? kind : undefined;
+    if (!this.board()?.supportsHistogram || (widget && !this.board()?.supportsActivityWidgets)) {
       this.error.set('Restart the Sikai backend with the current code, then reload this page to use the Insert tools.');
       return;
     }
-    this.addNote('yellow', kind === 'histogram' ? 'graph' : kind, kind === 'histogram');
+    if (kind === 'pie' || kind === 'timer' || kind === 'histogram') {
+      this.addNote('yellow', 'graph', kind === 'histogram', widget);
+    } else {
+      this.addNote('yellow', kind);
+    }
   }
 
   deleteNote(id: string): void {

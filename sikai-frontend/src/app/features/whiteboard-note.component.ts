@@ -1,5 +1,6 @@
 import { Component, DestroyRef, ElementRef, afterEveryRender, computed, effect, inject, input, output, signal } from '@angular/core';
 import { NgTemplateOutlet } from '@angular/common';
+import { ActivityWidget, readActivityState, WhiteboardActivityComponent } from './whiteboard-activity.component';
 
 export interface NoteBounds { x: number; y: number; width: number; height: number; }
 export type NoteKind = 'sticky' | 'table' | 'graph' | 'flowchart';
@@ -67,7 +68,7 @@ interface LearningObjectContent {
 @Component({
   selector: 'app-whiteboard-note',
   standalone: true,
-  imports: [NgTemplateOutlet],
+  imports: [NgTemplateOutlet, WhiteboardActivityComponent],
   template: `
     <div class="note-titlebar">
       @if (editable()) {
@@ -155,6 +156,10 @@ interface LearningObjectContent {
       </div>
     }
     @case ('graph') {
+      @if (widget(); as activity) {
+        <app-whiteboard-activity [widget]="activity" [text]="note().text" [editable]="editable()"
+          (changed)="changed.emit({ text: $event })" />
+      } @else {
       <div class="object-controls">
         @if (content().histogram) {
           <label>Start <input type="number" aria-label="First bin start" [readOnly]="!editable()"
@@ -201,6 +206,7 @@ interface LearningObjectContent {
           </div>
         </div>
       </div>
+      }
     }
     @case ('flowchart') {
       <div class="rotation-stage">
@@ -450,7 +456,13 @@ export class WhiteboardNoteComponent {
   private readonly draft = signal<NoteBounds | null>(null);
   readonly bounds = computed(() => (this.editable() ? this.draft() : this.preview()?.bounds) ?? this.note());
   readonly kind = computed(() => this.note().kind ?? 'sticky');
-  readonly label = computed(() => this.content().histogram ? 'histogram'
+  readonly widget = computed<ActivityWidget | null>(() => {
+    if (this.kind() !== 'graph') return null;
+    const widget = readActivityState(this.note().text)['widget'];
+    return widget === 'pie' || widget === 'timer' ? widget : null;
+  });
+  readonly label = computed(() => this.widget() === 'pie' ? 'pie chart' : this.widget() === 'timer' ? 'countdown timer'
+    : this.content().histogram ? 'histogram'
     : ({ sticky: 'sticky note', table: 'table', graph: 'bar graph', flowchart: 'flowchart' })[this.kind()]);
   readonly title = computed(() => this.kind() === 'sticky'
     ? this.note().authorName

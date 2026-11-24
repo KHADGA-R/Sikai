@@ -43,6 +43,8 @@ export class ThemeIconComponent {
     chevron: 'm6 9 6 6 6-6',
     'bar-graph': 'M3 21h18 M4 17h3v-5H4z M10.5 17h3V5h-3z M17 17h3V9h-3z',
     histogram: 'M3 20h18 M4 20v-6h5v-4h5V5h5v15 M9 14v6 M14 10v10',
+    pie: 'M12 3a9 9 0 1 0 9 9h-9z M15 3v6h6a8 8 0 0 0-6-6z',
+    timer: 'M9 2h6 M12 2v3 M18 6l2-2 M12 8v5l3 2 M20 13a8 8 0 1 1-16 0 8 8 0 0 1 16 0z',
     flowchart: 'M8 3h8v5H8z M12 8v5 M6 15v-2h12v2 M3 15h6v6H3z M15 15h6v6h-6z',
     undo: 'M9 8H4m0 0 4-4M4 8l4 4 M9 8h7a5 5 0 0 1 0 10h-4',
   };
