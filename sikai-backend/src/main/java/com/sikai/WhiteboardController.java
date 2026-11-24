@@ -28,10 +28,12 @@ public class WhiteboardController {
                              @NotEmpty @Size(max=180) List<@NotNull @Valid Point> points,
                              @Min(6) @Max(30) Integer radius) {}
     public record NoteInput(@NotBlank @Size(max=36) String slideId,
-                            @NotNull @Pattern(regexp="yellow|pink") String color) {}
+                            @NotNull @Pattern(regexp="yellow|pink") String color,
+                            @Pattern(regexp="sticky|table|graph|flowchart") String kind,
+                            boolean histogram) {}
     public record NoteBounds(@Min(0) @Max(1000) int x, @Min(0) @Max(1000) int y,
                              @Min(120) @Max(1000) int width, @Min(140) @Max(1000) int height) {}
-    public record NoteUpdate(@Size(max=1500) String text, @Valid NoteBounds bounds) {}
+    public record NoteUpdate(@Size(max=12000) String text, @Valid NoteBounds bounds) {}
 
     private final WhiteboardService board;
 

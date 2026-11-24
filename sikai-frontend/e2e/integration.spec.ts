@@ -256,6 +256,53 @@ test('live teacher availability, student booking, messaging, meeting link and ca
     await expect.poll(() => sharedNote.evaluate(note => note.style.width)).toBe(width);
     await page.getByRole('combobox', { name: 'Sticky note' }).selectOption('yellow');
     await expect(student.locator('app-whiteboard-note:not(.pink)')).toHaveCount(1);
+    const insert = page.getByLabel('Insert whiteboard object');
+    for (const [kind, field, value] of [
+      ['Table', 'Row 1, column 1', 'Instrument'],
+      ['Bar graph', 'Bar 2 value', '12'],
+      ['Flowchart', 'Flowchart step 1', 'Listen to the beat'],
+    ]) {
+      await insert.click();
+      await page.getByRole('button', { name: kind, exact: true }).click();
+      const editor = page.getByLabel(field, { exact: true });
+      await editor.fill(value);
+      await editor.press('Tab');
+      const sharedField = student.getByLabel(field, { exact: true });
+      await expect(sharedField).toHaveValue(value);
+      await expect(sharedField).toHaveAttribute('readonly', '');
+      if (kind === 'Table') {
+        const table = page.locator('app-whiteboard-note').filter({ has: editor });
+        await table.getByRole('button', { name: '+ Row', exact: true }).click();
+        await table.getByRole('button', { name: '+ Column', exact: true }).click();
+        await expect(table.getByLabel('Row 4, column 4')).toBeVisible();
+        await table.getByRole('button', { name: 'Remove last row' }).click();
+        await table.getByRole('button', { name: 'Rotate clockwise' }).click();
+        await expect(student.getByLabel('Row 3, column 4')).toBeVisible();
+        await expect(student.getByLabel('Row 4, column 4')).toHaveCount(0);
+        await expect(student.getByLabel('Whiteboard table').locator('..')).toHaveCSS('rotate', '90deg');
+        await expect(sharedField).toHaveValue(value);
+      }
+      if (kind === 'Bar graph') {
+        await expect(student.getByLabel('Bar 2 label')).toHaveValue('B');
+        await page.getByRole('button', { name: '+ Bar', exact: true }).click();
+        await expect(student.getByLabel('Bar 5 label')).toHaveValue('E');
+        await page.getByRole('button', { name: 'Remove last bar' }).click();
+        await expect(student.getByLabel('Bar 5 label')).toHaveCount(0);
+      }
+      if (kind === 'Flowchart') {
+        const flowchart = page.locator('app-whiteboard-note').filter({ has: editor });
+        await flowchart.getByRole('button', { name: 'Rotate clockwise' }).click();
+        await expect(sharedField.locator('..')).toHaveCSS('rotate', '90deg');
+      }
+    }
+    await insert.click();
+    await page.getByRole('button', { name: 'Histogram', exact: true }).click();
+    await page.getByLabel('Bin width', { exact: true }).fill('5');
+    await page.getByLabel('Bin width', { exact: true }).press('Tab');
+    await page.getByLabel('Bin 2 frequency').fill('7');
+    await page.getByLabel('Bin 2 frequency').press('Tab');
+    await expect(student.getByLabel('Bin 2 frequency')).toHaveValue('7');
+    await expect(student.getByText('5 to <10', { exact: true })).toBeVisible();
     await student.getByRole('link', { name: 'Back to live classes' }).click();
     await student.route('**/api/live-classes/slots/*/join', route => route.fulfill({
       status: 404, json: { message: 'Endpoint not found' },

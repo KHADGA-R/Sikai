@@ -1,0 +1,1 @@
+ALTER TABLE live_board_note ALTER COLUMN note_text SET DATA TYPE VARCHAR(12000);

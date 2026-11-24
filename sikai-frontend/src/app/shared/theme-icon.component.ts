@@ -38,6 +38,12 @@ export class ThemeIconComponent {
     circle: 'M20 12a8 8 0 1 1-16 0 8 8 0 0 1 16 0z',
     arrow: 'M5 19 19 5 M10 5h9v9',
     sticky: 'M5 3h14a1 1 0 0 1 1 1v11l-5 6H5a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z M15 21v-5a1 1 0 0 1 1-1h4 M8 8h8 M8 12h6',
+    table: 'M3 4h18v16H3z M3 9h18 M3 14h18 M9 4v16 M15 4v16',
+    insert: 'M4 12h16 M12 4v16',
+    chevron: 'm6 9 6 6 6-6',
+    'bar-graph': 'M3 21h18 M4 17h3v-5H4z M10.5 17h3V5h-3z M17 17h3V9h-3z',
+    histogram: 'M3 20h18 M4 20v-6h5v-4h5V5h5v15 M9 14v6 M14 10v10',
+    flowchart: 'M8 3h8v5H8z M12 8v5 M6 15v-2h12v2 M3 15h6v6H3z M15 15h6v6h-6z',
     undo: 'M9 8H4m0 0 4-4M4 8l4 4 M9 8h7a5 5 0 0 1 0 10h-4',
   };
 }

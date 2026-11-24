@@ -84,6 +84,23 @@
               <option value="pink">Pink</option>
             </select>
           </label>
+          <details #insertMenu class="insert-menu"
+            (focusout)="!insertMenu.contains($any($event.relatedTarget)) && (insertMenu.open = false)"
+            (keydown.escape)="closeInsertMenu(insertMenu, insertTrigger)">
+            <summary #insertTrigger class="tool-select insert-trigger" aria-label="Insert whiteboard object">
+              <app-theme-icon name="insert" />
+              Insert
+              <app-theme-icon class="insert-chevron" name="chevron" />
+            </summary>
+            <div class="insert-options">
+              @for (item of insertTools; track item.kind) {
+                <button type="button" (click)="closeInsertMenu(insertMenu, insertTrigger); insertLearningTool(item.kind)">
+                  <app-theme-icon [name]="item.icon" />
+                  {{ item.label }}
+                </button>
+              }
+            </div>
+          </details>
           <label class="tool-select" title="Show marks by participant">
             <app-theme-icon name="eye" />
             <select aria-label="Show marks" [value]="layer()" (change)="layer.set($any($event.target).value)">

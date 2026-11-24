@@ -4,7 +4,7 @@ import { ApiError, ApiService } from '../core/api.service';
 import { AuthService } from '../core/auth.service';
 import { isCurrentLiveSlot, latestCompletedSlotId, LIVE_CLASS_JOIN_LEAD_MS, safeMeetingUrl } from '../core/live-classes';
 import { LiveClassesService } from '../core/live-classes.service';
-import { NotePatch, StickyNote, WhiteboardNoteComponent } from './whiteboard-note.component';
+import { NoteKind, NotePatch, StickyNote, WhiteboardNoteComponent } from './whiteboard-note.component';
 import { ThemeIconComponent } from '../shared/theme-icon.component';
 import { ClassroomVideoComponent } from './classroom-video.component';
 import type { ClassroomView } from './classroom-video.component';
@@ -29,6 +29,7 @@ interface Board {
   marks: (Omit<Mark, 'points'> & { points: string })[];
   erasures?: { markId: string; gestureId: string; points: string; radius?: number }[];
   notes?: StickyNote[];
+  supportsHistogram?: boolean;
 }
 
 @Component({
@@ -66,6 +67,12 @@ export class WhiteboardComponent {
     { tool: 'arrow', label: 'Arrow', glyph: '↗' },
   ];
   readonly activeShape = computed(() => this.shapes.find(shape => shape.tool === this.tool())?.tool ?? '');
+  readonly insertTools = [
+    { kind: 'table', label: 'Table', icon: 'table' },
+    { kind: 'graph', label: 'Bar graph', icon: 'bar-graph' },
+    { kind: 'histogram', label: 'Histogram', icon: 'histogram' },
+    { kind: 'flowchart', label: 'Flowchart', icon: 'flowchart' },
+  ] as const;
   readonly strokeStyles = [
     { value: 'solid', label: 'Solid' }, { value: 'dashed', label: 'Dashed' }, { value: 'dotted', label: 'Dotted' },
   ] as const;
@@ -453,10 +460,10 @@ export class WhiteboardComponent {
     await this.write(async () => { await this.api.request('DELETE', this.resource + '/marks/' + id); });
   }
 
-  addNote(color: StickyNote['color']): void {
+  addNote(color: StickyNote['color'], kind: NoteKind = 'sticky', histogram = false): void {
     const slideId = this.selected().id;
     this.queueNoteWrite(async () => {
-      await this.api.request('POST', this.resource + '/notes', { slideId, color });
+      await this.api.request('POST', this.resource + '/notes', { slideId, color, kind, histogram });
     });
   }
 
@@ -476,6 +483,19 @@ export class WhiteboardComponent {
     const color = select.value;
     if (color === 'yellow' || color === 'pink') this.addNote(color);
     select.value = '';
+  }
+
+  closeInsertMenu(menu: HTMLDetailsElement, trigger: HTMLElement): void {
+    trigger.focus();
+    menu.open = false;
+  }
+
+  insertLearningTool(kind: typeof this.insertTools[number]['kind']): void {
+    if (!this.board()?.supportsHistogram) {
+      this.error.set('Restart the Sikai backend with the current code, then reload this page to use the Insert tools.');
+      return;
+    }
+    this.addNote('yellow', kind === 'histogram' ? 'graph' : kind, kind === 'histogram');
   }
 
   deleteNote(id: string): void {

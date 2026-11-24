@@ -38,7 +38,7 @@ public class WhiteboardService {
             WHERE m.slot_id=? AND m.slide_id=?
             """, slotId, slideId);
         var notes = db.list("""
-            SELECT n.id,n.author_id AS "authorId",u.name AS "authorName",n.color,n.note_text AS "text",
+            SELECT n.id,n.author_id AS "authorId",u.name AS "authorName",n.color,n.kind,n.note_text AS "text",
                    n.left_pos AS x,n.top_pos AS y,n.note_width AS width,n.note_height AS height
             FROM live_board_note n JOIN app_user u ON u.id=n.author_id
             WHERE n.slot_id=? AND n.slide_id=? ORDER BY n.revision
@@ -47,6 +47,8 @@ public class WhiteboardService {
             Map.entry("instructor", user.id().equals(slot.get("owner_id"))), Map.entry("instructorId", slot.get("owner_id")),
             Map.entry("meetingUrl", slot.get("meeting_url")), Map.entry("start", slot.get("start_at")),
             Map.entry("end", slot.get("end_at")), Map.entry("sikaiVideo", slot.get("sikai_video")),
+            Map.entry("supportsLearningObjects", true),
+            Map.entry("supportsHistogram", true),
             Map.entry("slides", slides), Map.entry("marks", marks), Map.entry("erasures", erasures), Map.entry("notes", notes));
     }
 
@@ -123,13 +125,18 @@ public class WhiteboardService {
         long revision = nextRevision(slotId);
         int count = ((Number) db.one("SELECT COUNT(*) AS total FROM live_board_note WHERE slot_id=? AND slide_id=?",
             slotId, input.slideId()).get("total")).intValue();
-        Db.require(count < 50, CONFLICT, "This slide already has 50 sticky notes");
+        Db.require(count < 50, CONFLICT, "This slide already has 50 whiteboard objects");
         int offset = 60 + (count % 8) * 25;
         String id = Db.id();
+        String kind = input.kind() == null ? "sticky" : input.kind();
+        boolean sticky = kind.equals("sticky");
+        Db.require(!input.histogram() || kind.equals("graph"), BAD_REQUEST, "A histogram must use the graph tool");
+        String content = input.histogram() ? "{\"histogram\":true}" : "";
         db.update("""
-            INSERT INTO live_board_note(id,slot_id,slide_id,author_id,color,note_text,left_pos,top_pos,note_width,note_height,revision)
-            VALUES (?,?,?,?,?,'',?,?,250,275,?)
-            """, id, slotId, input.slideId(), user.id(), input.color(), offset, offset, revision);
+            INSERT INTO live_board_note(id,slot_id,slide_id,author_id,color,kind,note_text,left_pos,top_pos,note_width,note_height,revision)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+            """, id, slotId, input.slideId(), user.id(), input.color(), kind, content, offset, offset,
+            sticky ? 250 : 560, sticky ? 275 : 390, revision);
         return Map.of("id", id);
     }
 
