@@ -1,4 +1,4 @@
-import { Component, DestroyRef, ElementRef, afterEveryRender, computed, inject, input, output, signal } from '@angular/core';
+import { Component, DestroyRef, ElementRef, afterEveryRender, computed, effect, inject, input, output, signal } from '@angular/core';
 import { NgTemplateOutlet } from '@angular/common';
 
 export interface NoteBounds { x: number; y: number; width: number; height: number; }
@@ -12,6 +12,17 @@ export interface StickyNote extends NoteBounds {
   text: string;
 }
 export interface NotePatch { text?: string; bounds?: NoteBounds; }
+export interface FlowPreview {
+  noteId: string;
+  text: string | null;
+  bounds: NoteBounds | null;
+  selectedBox: number;
+  linkSource: number | null;
+  shapesOpen: boolean;
+  pickedShape: FlowShape | null;
+  connecting: boolean;
+  action: 'editing' | 'typing' | 'moving' | 'resizing' | 'routing';
+}
 interface FlowSize { width: number; height: number; }
 type FlowFormat = [fill: string, textColor: string, fontSize: number, flags: number];
 type FlowLink = [from: number, to: number];
@@ -67,28 +78,31 @@ interface LearningObjectContent {
         <button type="button" class="remove" [attr.aria-label]="'Delete ' + label()" (click)="removed.emit()">×</button>
       } @else {
         <span class="author">{{ title() }}</span>
+        @if (preview(); as live) {
+          <span class="preview-status">{{ previewMessage(live.action) }}</span>
+        }
       }
     </div>
-    @if (editable() && (kind() === 'table' || kind() === 'flowchart')) {
-      <div class="object-controls">
-        <button type="button" aria-label="Rotate clockwise" (click)="rotate()">↻ Rotate</button>
+    @if ((editable() && kind() === 'table') || kind() === 'flowchart') {
+      <div class="object-controls" [class.watching]="!editable()">
+        <button type="button" aria-label="Rotate clockwise" [disabled]="!editable()" (click)="rotate()">↻ Rotate</button>
         @if (kind() === 'flowchart') {
-          <button type="button" class="shape-toggle" [attr.aria-expanded]="showFlowShapes()"
+          <button type="button" class="shape-toggle" [disabled]="!editable()" [attr.aria-expanded]="visibleFlowShapes()"
             (click)="toggleFlowShapes()">Shapes ▾</button>
-          <button type="button" [attr.aria-pressed]="connectMode()" (click)="toggleConnect()">Connect</button>
+          <button type="button" [disabled]="!editable()" [attr.aria-pressed]="editable() ? connectMode() : preview()?.connecting ?? false" (click)="toggleConnect()">Connect</button>
           <button type="button" aria-label="Select flowchart for zoom" title="Select chart, then scroll to zoom" (click)="selectFlowCanvas()">Zoom</button>
           <label title="Box background color"><span aria-hidden="true">Fill</span>
-            <input type="color" aria-label="Box background color" [value]="selectedFormat()[0]" (change)="setFlowColor(0, $event)" />
+            <input type="color" aria-label="Box background color" [disabled]="!editable()" [value]="selectedFormat()[0]" (change)="setFlowColor(0, $event)" />
           </label>
           <label title="Font color"><span aria-hidden="true">Text</span>
-            <input type="color" aria-label="Font color" [value]="selectedFormat()[1]" (change)="setFlowColor(1, $event)" />
+            <input type="color" aria-label="Font color" [disabled]="!editable()" [value]="selectedFormat()[1]" (change)="setFlowColor(1, $event)" />
           </label>
-          <button type="button" aria-label="Bold" title="Bold" [attr.aria-pressed]="selectedFormat()[3] % 2 === 1"
+          <button type="button" aria-label="Bold" title="Bold" [disabled]="!editable()" [attr.aria-pressed]="selectedFormat()[3] % 2 === 1"
             (click)="toggleFlowStyle(1)"><strong>B</strong></button>
-          <button type="button" aria-label="Italic" title="Italic" [attr.aria-pressed]="selectedFormat()[3] >= 2"
+          <button type="button" aria-label="Italic" title="Italic" [disabled]="!editable()" [attr.aria-pressed]="selectedFormat()[3] >= 2"
             (click)="toggleFlowStyle(2)"><em>I</em></button>
-          <button type="button" aria-label="Decrease font size" title="Decrease font size" (click)="changeFlowFontSize(-1)">A−</button>
-          <button type="button" aria-label="Increase font size" title="Increase font size" (click)="changeFlowFontSize(1)">A+</button>
+          <button type="button" aria-label="Decrease font size" title="Decrease font size" [disabled]="!editable()" (click)="changeFlowFontSize(-1)">A−</button>
+          <button type="button" aria-label="Increase font size" title="Increase font size" [disabled]="!editable()" (click)="changeFlowFontSize(1)">A+</button>
         }
         @if (kind() === 'table') {
           <button type="button" [disabled]="content().rows === 8" (click)="resizeTable('rows', 1)">+ Row</button>
@@ -98,11 +112,12 @@ interface LearningObjectContent {
         }
       </div>
     }
-    @if (kind() === 'flowchart' && editable() && showFlowShapes()) {
+    @if (kind() === 'flowchart' && visibleFlowShapes()) {
       <div class="flow-palette-anchor">
       <div class="flow-palette" role="group" aria-label="Flowchart shapes">
         @for (shape of flowShapeOptions; track shape.kind) {
-          <button type="button" draggable="true" [attr.aria-pressed]="pickedShape() === shape.kind"
+          <button type="button" [disabled]="!editable()" [draggable]="editable()"
+            [attr.aria-pressed]="(editable() ? pickedShape() : preview()?.pickedShape) === shape.kind"
             [title]="shape.label" (click)="pickShape(shape.kind)"
             (dragstart)="dragShape($event, shape.kind)" (dragend)="endShapeDrag()">
             <svg viewBox="0 0 100 50" aria-hidden="true"><path [attr.d]="shape.path" vector-effect="non-scaling-stroke" /></svg>
@@ -224,8 +239,8 @@ interface LearningObjectContent {
           <div class="flow-box" [style.width.px]="flowSizes()[index].width" [style.height.px]="flowSizes()[index].height"
             [style.left.px]="flowLayout()?.positions?.[index]?.[0]" [style.top.px]="flowLayout()?.positions?.[index]?.[1]"
             [class.editable]="editable()" [attr.data-shape]="content().flowShapes[index]"
-            [attr.data-flow-index]="index" [class.selected]="editable() && selectedFlowBox() === index"
-            [class.link-source]="linkSource() === index"
+            [attr.data-flow-index]="index" [class.selected]="editable() ? selectedFlowBox() === index : preview()?.selectedBox === index"
+            [class.link-source]="(editable() ? linkSource() : preview()?.linkSource) === index"
             [attr.tabindex]="editable() ? 0 : null"
             (focusin)="selectedFlowBox.set(index)"
             (pointerdown)="startFlowMove($event, index)" (pointermove)="moveFlowBox($event)"
@@ -240,7 +255,8 @@ interface LearningObjectContent {
               [style.font-weight]="flowFormat(index)[3] % 2 === 1 ? '700' : '400'"
               [style.font-style]="flowFormat(index)[3] >= 2 ? 'italic' : 'normal'"
               [readOnly]="!editable()" [value]="fields()[index] ?? ''" [maxLength]="fieldLimit(index)"
-              (keydown.escape)="selectFlowBox($event)" (change)="setField(index, $event)"></textarea>
+              (keydown.escape)="selectFlowBox($event)" (input)="previewFlowText(index, $event)"
+              (blur)="flowTextDraft.set(null)" (change)="setField(index, $event)"></textarea>
             @if (editable()) {
               <div class="flow-move-edge" title="Drag to move box"></div>
               @if (connectMode()) {
@@ -295,6 +311,8 @@ interface LearningObjectContent {
     }
   `,
   host: {
+    '(focusin)': 'onNoteFocus(true)',
+    '(focusout)': 'onNoteFocus(false, $event)',
     '[class.pink]': "note().color === 'pink'",
     '[class.learning-object]': "kind() !== 'sticky'",
     '[style.left.%]': 'bounds().x / 10',
@@ -311,6 +329,7 @@ interface LearningObjectContent {
     .note-titlebar { display: flex; align-items: center; justify-content: space-between; gap: 2px; min-height: 24px; padding-inline: 3px; background: #51350212; }
     .note-titlebar button, .resize { border: 0; background: transparent; color: inherit; font: inherit; line-height: 1; }
     .move, .author { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .68rem; font-weight: 700; }
+    .preview-status { flex: none; font-size: .65rem; padding-inline: 3px; }
     .move { flex: 1; min-height: 24px; padding: 2px; text-align: start; cursor: grab; touch-action: none; }
     .move:active { cursor: grabbing; }
     .remove { width: 22px; height: 22px; padding: 0; cursor: pointer; }
@@ -321,6 +340,7 @@ interface LearningObjectContent {
     .object-controls button, .object-controls label { margin: 0; color: #000; font: inherit; font-size: .75rem; }
     .object-controls button { min-height: 24px; border: 1px solid #aebfdb; border-radius: 4px; padding: 2px 6px; background: #f1f6fc; }
     .object-controls button:disabled { opacity: .45; }
+    .object-controls.watching button:disabled { opacity: .85; }
     .object-controls label { display: inline-flex; align-items: center; gap: 3px; }
     .object-controls input { width: 54px; border: 1px solid #aebfdb; }
     .rotation-stage { position: relative; container-type: size; flex: 1; min-height: 0; overflow: hidden; }
@@ -403,6 +423,8 @@ export class WhiteboardNoteComponent {
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
   readonly note = input.required<StickyNote>();
   readonly editable = input(false);
+  readonly preview = input<FlowPreview | null>(null);
+  readonly previewChanged = output<FlowPreview | null>();
   readonly changed = output<NotePatch>();
   readonly removed = output<void>();
   readonly flowPlaceholders = ['Start', 'Next step', 'Finish'];
@@ -410,6 +432,9 @@ export class WhiteboardNoteComponent {
   readonly flowAddSides = ['left', 'right', 'bottom'] as const;
   readonly flowZoom = signal(1);
   readonly showFlowShapes = signal(false);
+  private readonly noteFocused = signal(false);
+  readonly visibleFlowShapes = computed(() => this.editable() ? this.showFlowShapes() : this.preview()?.shapesOpen ?? false);
+  readonly flowTextDraft = signal<{ index: number; text: string } | null>(null);
   readonly pickedShape = signal<FlowShape | null>(null);
   readonly selectedFlowBox = signal(0);
   readonly connectMode = signal(false);
@@ -419,11 +444,11 @@ export class WhiteboardNoteComponent {
   private readonly flowMoveDraft = signal<FlowPoint[] | null>(null);
   private flowMoveGesture?: { pointerId: number; index: number; x: number; y: number; positions: FlowPoint[] };
   private flowOrigin = 0;
-  readonly selectedFormat = computed(() => this.flowFormat(this.selectedFlowBox()));
+  readonly selectedFormat = computed(() => this.flowFormat(this.editable() ? this.selectedFlowBox() : this.preview()?.selectedBox ?? 0));
   readonly flowShapeOptions = (Object.keys(FLOW_SHAPES) as FlowShape[])
     .map(kind => ({ kind, ...FLOW_SHAPES[kind] }));
   private readonly draft = signal<NoteBounds | null>(null);
-  readonly bounds = computed(() => this.draft() ?? this.note());
+  readonly bounds = computed(() => (this.editable() ? this.draft() : this.preview()?.bounds) ?? this.note());
   readonly kind = computed(() => this.note().kind ?? 'sticky');
   readonly label = computed(() => this.content().histogram ? 'histogram'
     : ({ sticky: 'sticky note', table: 'table', graph: 'bar graph', flowchart: 'flowchart' })[this.kind()]);
@@ -432,9 +457,10 @@ export class WhiteboardNoteComponent {
     : this.label().replace(/^./, char => char.toUpperCase()) + ' · ' + this.note().authorName);
   readonly content = computed<LearningObjectContent>(() => {
     let saved: Partial<LearningObjectContent> = {};
-    if (this.kind() !== 'sticky' && this.note().text) {
+    const text = this.editable() ? this.note().text : this.preview()?.text ?? this.note().text;
+    if (this.kind() !== 'sticky' && text) {
       try {
-        const value: unknown = JSON.parse(this.note().text);
+        const value: unknown = JSON.parse(text);
         if (Array.isArray(value)) saved = { fields: value };
         else if (value && typeof value === 'object') saved = value;
       } catch {
@@ -540,6 +566,10 @@ export class WhiteboardNoteComponent {
   private pendingText?: string;
 
   constructor() {
+    effect(() => {
+      if (this.kind() !== 'flowchart' || !this.editable()) return;
+      this.previewChanged.emit(this.noteFocused() ? this.livePreview() : null);
+    });
     const render = afterEveryRender({ mixedReadWrite: () => {
       const origin = this.flowLayout()?.origin ?? 0;
       if (origin !== this.flowOrigin) {
@@ -556,6 +586,48 @@ export class WhiteboardNoteComponent {
       observer.disconnect();
       this.flushText();
     });
+  }
+
+  onNoteFocus(focused: boolean, event?: FocusEvent): void {
+    if (this.kind() !== 'flowchart' || !this.editable()) return;
+    if (focused || !this.host.nativeElement.contains(event?.relatedTarget as Node | null)) {
+      this.noteFocused.set(focused);
+    }
+  }
+
+  previewFlowText(index: number, event: Event): void {
+    if (!this.editable()) return;
+    this.flowTextDraft.set({ index, text: (event.target as HTMLTextAreaElement).value.slice(0, this.fieldLimit(index)) });
+  }
+
+  previewMessage(action: FlowPreview['action']): string {
+    const labels = {
+      editing: 'Editing the flowchart', typing: 'Typing in a box', moving: 'Moving a box',
+      resizing: 'Resizing a box', routing: 'Adjusting a connection',
+    };
+    return labels[action];
+  }
+
+  private livePreview(): FlowPreview {
+    const move = this.flowMoveDraft();
+    const resize = this.flowDraft();
+    const bend = this.bendDraft();
+    const typing = this.flowTextDraft();
+    const content = this.content();
+    const fields = [...content.fields];
+    if (typing) fields[typing.index] = typing.text;
+    const text = JSON.stringify({
+      ...content, fields, flowPositions: move ?? content.flowPositions,
+      flowSizes: resize ? this.flowSizes() : content.flowSizes,
+      flowBends: bend ? [...content.flowBends.filter(([from, to]) => from !== bend[0] || to !== bend[1]), bend] : content.flowBends,
+    });
+    return {
+      noteId: this.note().id, text: text.length <= 12000 ? text : null, bounds: this.draft(),
+      selectedBox: this.selectedFlowBox(), linkSource: this.linkSource(),
+      shapesOpen: this.showFlowShapes(), pickedShape: this.pickedShape(), connecting: this.connectMode(),
+      action: move || this.gesture?.mode === 'move' ? 'moving'
+        : resize || this.gesture?.mode === 'resize' ? 'resizing' : bend ? 'routing' : typing ? 'typing' : 'editing',
+    };
   }
 
   flowFormat(index: number): FlowFormat {
@@ -791,6 +863,7 @@ export class WhiteboardNoteComponent {
   startBend(event: PointerEvent, link: RoutedFlowLink): void {
     if (event.button !== 0 || this.bendDraft()) return;
     event.preventDefault();
+    this.host.nativeElement.querySelector<HTMLElement>('.flow.rotatable')?.focus({ preventScroll: true });
     (event.currentTarget as SVGGElement).setPointerCapture(event.pointerId);
     this.bendDraft.set([link.from, link.to, link.bend[0] - (this.flowLayout()?.origin ?? 0), link.bend[1]]);
   }

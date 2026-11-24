@@ -4,7 +4,7 @@ import { ApiError, ApiService } from '../core/api.service';
 import { AuthService } from '../core/auth.service';
 import { isCurrentLiveSlot, latestCompletedSlotId, LIVE_CLASS_JOIN_LEAD_MS, safeMeetingUrl } from '../core/live-classes';
 import { LiveClassesService } from '../core/live-classes.service';
-import { NoteKind, NotePatch, StickyNote, WhiteboardNoteComponent } from './whiteboard-note.component';
+import { FlowPreview, NoteKind, NotePatch, StickyNote, WhiteboardNoteComponent } from './whiteboard-note.component';
 import { ThemeIconComponent } from '../shared/theme-icon.component';
 import { ClassroomVideoComponent } from './classroom-video.component';
 import type { ClassroomView } from './classroom-video.component';
@@ -29,6 +29,7 @@ interface Board {
   marks: (Omit<Mark, 'points'> & { points: string })[];
   erasures?: { markId: string; gestureId: string; points: string; radius?: number }[];
   notes?: StickyNote[];
+  supportsFlowPreviews?: boolean;
   supportsHistogram?: boolean;
 }
 
@@ -102,6 +103,9 @@ export class WhiteboardComponent {
   readonly userId = computed(() => this.auth.user()?.id);
   readonly slides = computed(() => [this.blank, ...(this.board()?.slides ?? [])]);
   readonly notes = computed(() => this.board()?.notes ?? []);
+  readonly flowPreviews = signal<Partial<Record<string, FlowPreview>>>({});
+  private localFlowPreview: FlowPreview | null = null;
+  private previewRequestPending = false;
   readonly marks = computed<Mark[]>(() => this.board()?.marks.map(mark => ({
     ...mark, points: JSON.parse(mark.points) as Point[],
   })) ?? []);
@@ -159,14 +163,47 @@ export class WhiteboardComponent {
       this.now.set(Date.now());
       if (!document.hidden && !this.busy()) void this.refresh();
     }, 2000);
+    const previewTimer = window.setInterval(() => void this.syncFlowPreviews(), 450);
     const viewport = window.matchMedia('(min-width: 920px)');
     const onResize = (event: MediaQueryListEvent) => this.wideClassroom.set(event.matches);
     viewport.addEventListener('change', onResize);
     inject(DestroyRef).onDestroy(() => {
       window.clearInterval(timer);
+      window.clearInterval(previewTimer);
       viewport.removeEventListener('change', onResize);
       this.requestId++;
     });
+  }
+
+  setFlowPreview(noteId: string, preview: FlowPreview | null): void {
+    if (preview || this.localFlowPreview?.noteId === noteId) this.localFlowPreview = preview;
+  }
+
+  private async syncFlowPreviews(): Promise<void> {
+    const notes = this.notes();
+    const room = this.board();
+    if (!room?.supportsFlowPreviews || this.now() < room.start || this.now() >= room.end ||
+      !this.whiteboardOpen() || !notes.some(note => note.kind === 'flowchart')) {
+      if (Object.keys(this.flowPreviews()).length) this.flowPreviews.set({});
+      return;
+    }
+    if (this.previewRequestPending || document.hidden) return;
+    const slideId = this.selected().id;
+    const local = this.localFlowPreview;
+    this.previewRequestPending = true;
+    try {
+      const previews = await this.api.request<FlowPreview[]>('POST', this.resource + '/flow-previews', {
+        slideId,
+        preview: local && notes.some(note => note.id === local.noteId) ? local : null,
+      });
+      if (this.selected().id === slideId) {
+        this.flowPreviews.set(Object.fromEntries(previews.map(preview => [preview.noteId, preview])));
+      }
+    } catch {
+      this.flowPreviews.set({});
+    } finally {
+      this.previewRequestPending = false;
+    }
   }
 
   selectView(view: ClassroomView): void {
@@ -242,6 +279,8 @@ export class WhiteboardComponent {
   }
 
   async select(slide: Slide): Promise<void> {
+    this.localFlowPreview = null;
+    this.flowPreviews.set({});
     this.cancelStroke();
     this.selected.set(slide);
     this.layer.set('all');

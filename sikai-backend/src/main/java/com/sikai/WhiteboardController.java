@@ -34,6 +34,12 @@ public class WhiteboardController {
     public record NoteBounds(@Min(0) @Max(1000) int x, @Min(0) @Max(1000) int y,
                              @Min(120) @Max(1000) int width, @Min(140) @Max(1000) int height) {}
     public record NoteUpdate(@Size(max=12000) String text, @Valid NoteBounds bounds) {}
+    public record FlowPreview(@NotBlank @Size(max=36) String noteId, @Size(max=12000) String text, @Valid NoteBounds bounds,
+                              @Min(0) @Max(19) int selectedBox, @Min(0) @Max(19) Integer linkSource,
+                              @Pattern(regexp="terminal|process|decision|inputOutput|predefined|document|manual|delay|preparation") String pickedShape,
+                              boolean shapesOpen, boolean connecting,
+                              @NotNull @Pattern(regexp="editing|typing|moving|resizing|routing") String action) {}
+    public record FlowPulse(@NotBlank @Size(max=36) String slideId, @Valid FlowPreview preview) {}
 
     private final WhiteboardService board;
 
@@ -80,6 +86,12 @@ public class WhiteboardController {
     public Object addNote(@PathVariable String slotId, @Valid @RequestBody NoteInput input,
         @AuthenticationPrincipal AuthService.User user) {
         return board.addNote(slotId, input, user);
+    }
+
+    @PostMapping("/flow-previews")
+    public ResponseEntity<Object> flowPreviews(@PathVariable String slotId, @Valid @RequestBody FlowPulse input,
+        @AuthenticationPrincipal AuthService.User user) {
+        return privateResponse(board.flowPreviews(slotId, input, user));
     }
 
     @PatchMapping("/notes/{noteId}")

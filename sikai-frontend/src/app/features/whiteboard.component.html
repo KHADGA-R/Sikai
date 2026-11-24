@@ -192,6 +192,7 @@
           </svg>
           @for (note of notes(); track note.id) {
             <app-whiteboard-note [note]="note" [editable]="note.authorId === userId()"
+              [preview]="flowPreviews()[note.id] ?? null" (previewChanged)="setFlowPreview(note.id, $event)"
               (changed)="changeNote(note.id, $event)" (removed)="deleteNote(note.id)" />
           }
         </div>

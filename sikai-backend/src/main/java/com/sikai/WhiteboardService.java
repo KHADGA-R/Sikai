@@ -3,6 +3,7 @@ package com.sikai;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.HashSet;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Pattern;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -14,6 +15,9 @@ public class WhiteboardService {
     private static final Pattern SLIDE_IMAGE = Pattern.compile("data:image/(png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}");
     private final Db db;
     private final ObjectMapper json;
+    private record PreviewKey(String slotId, String userId) {}
+    private record ActivePreview(String slideId, WhiteboardController.FlowPreview preview, long expiresAt) {}
+    private final Map<PreviewKey, ActivePreview> previews = new ConcurrentHashMap<>();
 
     public WhiteboardService(Db db, ObjectMapper json) {
         this.db = db;
@@ -49,6 +53,7 @@ public class WhiteboardService {
             Map.entry("end", slot.get("end_at")), Map.entry("sikaiVideo", slot.get("sikai_video")),
             Map.entry("supportsLearningObjects", true),
             Map.entry("supportsHistogram", true),
+            Map.entry("supportsFlowPreviews", true),
             Map.entry("slides", slides), Map.entry("marks", marks), Map.entry("erasures", erasures), Map.entry("notes", notes));
     }
 
@@ -172,6 +177,26 @@ public class WhiteboardService {
             || db.exists("SELECT id FROM booking WHERE slot_id=? AND student_id=? AND status='confirmed'", slotId, user.id())),
             FORBIDDEN, "This whiteboard is available to the instructor and confirmed students");
         return slot;
+    }
+
+    public Object flowPreviews(String slotId, WhiteboardController.FlowPulse input, AuthService.User user) {
+        access(slotId, user);
+        var key = new PreviewKey(slotId, user.id());
+        var preview = input.preview();
+        long now = System.currentTimeMillis();
+        previews.entrySet().removeIf(entry -> entry.getValue().expiresAt() <= now);
+        if (preview == null) {
+            previews.remove(key);
+        } else if (db.exists("SELECT id FROM live_board_note WHERE id=? AND slot_id=? AND slide_id=? AND author_id=? AND kind='flowchart'",
+                preview.noteId(), slotId, input.slideId(), user.id())) {
+            previews.put(key, new ActivePreview(input.slideId(), preview, now + 2500));
+        } else {
+            previews.remove(key);
+        }
+        return previews.entrySet().stream()
+            .filter(entry -> entry.getKey().slotId().equals(slotId) && !entry.getKey().equals(key)
+                && entry.getValue().slideId().equals(input.slideId()))
+            .map(entry -> entry.getValue().preview()).toList();
     }
 
     private void requireSlide(String slotId, String slideId) {

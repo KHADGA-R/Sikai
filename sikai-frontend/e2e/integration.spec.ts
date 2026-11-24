@@ -267,8 +267,14 @@ test('live teacher availability, student booking, messaging, meeting link and ca
       await page.getByRole('button', { name: kind, exact: true }).click();
       const editor = page.getByLabel(field, { exact: true });
       await editor.fill(value);
-      await editor.press('Tab');
       const sharedField = student.getByLabel(field, { exact: true });
+      if (kind === 'Flowchart') {
+        const watching = student.locator('app-whiteboard-note').filter({ has: sharedField });
+        await expect(watching.getByRole('button', { name: 'Bold' })).toBeDisabled();
+        await expect(watching.getByText('Typing in a box')).toBeVisible();
+        await expect(sharedField).toHaveValue(value);
+      }
+      await editor.press('Tab');
       await expect(sharedField).toHaveValue(value);
       await expect(sharedField).toHaveAttribute('readonly', '');
       if (kind === 'Table') {
@@ -378,6 +384,8 @@ test('live teacher availability, student booking, messaging, meeting link and ca
         await page.mouse.move(moveX, moveY);
         await page.mouse.down();
         await page.mouse.move(moveX, moveY + 24, { steps: 4 });
+        await expect(student.getByText('Moving a box', { exact: true })).toBeVisible();
+        await expect.poll(() => position(rightBox)).toEqual([beforeMove[0], beforeMove[1] + 24]);
         await page.mouse.up();
         await expect.poll(() => position(rightBox)).toEqual([beforeMove[0], beforeMove[1] + 24]);
         await expect(sideLink).not.toHaveAttribute('d', sideRoute!);
