@@ -7,6 +7,7 @@ import { LiveClassesService } from '../core/live-classes.service';
 import { FlowPreview, NoteKind, NotePatch, StickyNote, WhiteboardNoteComponent } from './whiteboard-note.component';
 import { ThemeIconComponent } from '../shared/theme-icon.component';
 import { ClassroomVideoComponent } from './classroom-video.component';
+import { CalculatorPreview, WhiteboardCalculatorComponent } from './whiteboard-calculator.component';
 import type { ClassroomView } from './classroom-video.component';
 
 type Shape = 'line' | 'rectangle' | 'ellipse' | 'circle' | 'arrow';
@@ -31,12 +32,13 @@ interface Board {
   notes?: StickyNote[];
   supportsFlowPreviews?: boolean;
   supportsActivityWidgets?: boolean;
+  supportsCalculatorPreviews?: boolean;
   supportsHistogram?: boolean;
 }
 
 @Component({
   standalone: true,
-  imports: [RouterLink, WhiteboardNoteComponent, ThemeIconComponent, ClassroomVideoComponent],
+  imports: [RouterLink, WhiteboardNoteComponent, ThemeIconComponent, ClassroomVideoComponent, WhiteboardCalculatorComponent],
   templateUrl: './whiteboard.component.html',
   styleUrl: './whiteboard.component.css',
 })
@@ -149,6 +151,20 @@ export class WhiteboardComponent {
     return !!room && (isCurrentLiveSlot(room, now) || latestCompletedSlotId(this.live.state(), now) === this.slotId);
   });
   readonly slidesOpen = signal(true);
+  readonly calculatorOpen = signal(false);
+  readonly sharedCalculator = signal<CalculatorPreview | null>(null);
+  private localCalculator: CalculatorPreview | null = null;
+  readonly boardSidebarOpen = computed(() => this.slidesOpen() || this.calculatorOpen() || !!this.sharedCalculator());
+  readonly calculatorSharingAvailable = computed(() => {
+    const room = this.board();
+    const now = this.now();
+    return !!room?.instructor && !!room.supportsCalculatorPreviews && room.start <= now && now < room.end;
+  });
+  readonly calculatorSharingUnavailable = computed(() => {
+    const room = this.board();
+    if (!room?.instructor || this.calculatorSharingAvailable()) return '';
+    return room.supportsCalculatorPreviews ? 'Sharing is available during a live class.' : 'Restart the backend to enable sharing.';
+  });
   readonly wideClassroom = signal(window.matchMedia('(min-width: 920px)').matches);
   private readonly requestedView = signal<ClassroomView>('whiteboard');
   private selectedViewManually = false;
@@ -166,7 +182,7 @@ export class WhiteboardComponent {
       this.now.set(Date.now());
       if (!document.hidden && !this.busy()) void this.refresh();
     }, 2000);
-    const previewTimer = window.setInterval(() => void this.syncFlowPreviews(), 450);
+    const previewTimer = window.setInterval(() => void this.syncClassroomPreviews(), 450);
     const viewport = window.matchMedia('(min-width: 920px)');
     const onResize = (event: MediaQueryListEvent) => this.wideClassroom.set(event.matches);
     viewport.addEventListener('change', onResize);
@@ -182,12 +198,17 @@ export class WhiteboardComponent {
     if (preview || this.localFlowPreview?.noteId === noteId) this.localFlowPreview = preview;
   }
 
-  private async syncFlowPreviews(): Promise<void> {
+  setCalculatorPreview(preview: CalculatorPreview | null): void {
+    this.localCalculator = preview;
+  }
+
+  private async syncClassroomPreviews(): Promise<void> {
     const notes = this.notes();
     const room = this.board();
     if (!room?.supportsFlowPreviews || this.now() < room.start || this.now() >= room.end ||
-      !this.whiteboardOpen() || !notes.some(note => note.kind === 'flowchart')) {
+      !this.whiteboardOpen() || (!room.supportsCalculatorPreviews && !notes.some(note => note.kind === 'flowchart'))) {
       if (Object.keys(this.flowPreviews()).length) this.flowPreviews.set({});
+      if (this.sharedCalculator()) this.sharedCalculator.set(null);
       return;
     }
     if (this.previewRequestPending || document.hidden) return;
@@ -195,15 +216,21 @@ export class WhiteboardComponent {
     const local = this.localFlowPreview;
     this.previewRequestPending = true;
     try {
-      const previews = await this.api.request<FlowPreview[]>('POST', this.resource + '/flow-previews', {
-        slideId,
-        preview: local && notes.some(note => note.id === local.noteId) ? local : null,
-      });
+      const payload = { slideId, preview: local && notes.some(note => note.id === local.noteId) ? local : null };
+      const result = room.supportsCalculatorPreviews
+        ? await this.api.request<{ flows: FlowPreview[]; calculator: CalculatorPreview | null }>(
+            'POST', this.resource + '/classroom-previews', {
+              ...payload, calculator: room.instructor && this.calculatorOpen() &&
+                (!this.videoOpen() || this.classroomView() !== 'presentation') ? this.localCalculator : null,
+            })
+        : { flows: await this.api.request<FlowPreview[]>('POST', this.resource + '/flow-previews', payload), calculator: null };
+      this.sharedCalculator.set(result.calculator);
       if (this.selected().id === slideId) {
-        this.flowPreviews.set(Object.fromEntries(previews.map(preview => [preview.noteId, preview])));
+        this.flowPreviews.set(Object.fromEntries(result.flows.map(preview => [preview.noteId, preview])));
       }
     } catch {
       this.flowPreviews.set({});
+      this.sharedCalculator.set(null);
     } finally {
       this.previewRequestPending = false;
     }

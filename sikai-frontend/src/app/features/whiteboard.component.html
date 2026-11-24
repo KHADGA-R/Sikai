@@ -31,13 +31,21 @@
     <div #classroomLayout class="board-layout" [class.split-view]="videoOpen() && classroomView() === 'split'"
       [class.camera-first]="videoOpen() && classroomView() === 'whiteboard'" [style.--board-width]="boardShare() + '%'">
       @if (whiteboardOpen()) {
-      <section class="panel board-workspace" [class.slides-collapsed]="!slidesOpen()" [hidden]="videoOpen() && classroomView() === 'presentation'">
+      <section class="panel board-workspace" [class.slides-collapsed]="!boardSidebarOpen()"
+        [hidden]="videoOpen() && classroomView() === 'presentation'">
       <div class="whiteboard-panel-heading">
         <h2>Whiteboard</h2>
-        <button type="button" class="slides-toggle" [attr.aria-expanded]="slidesOpen()" (click)="slidesOpen.set(!slidesOpen())">
-          {{ slidesOpen() ? 'Hide slides' : 'Show slides' }}
-        </button>
+        <div class="board-panel-actions">
+          <button type="button" class="slides-toggle calculator-toggle" [attr.aria-expanded]="calculatorOpen()"
+            (click)="calculatorOpen.set(!calculatorOpen())">
+            <app-theme-icon name="calculator" /> Calculator
+          </button>
+          <button type="button" class="slides-toggle" [attr.aria-expanded]="slidesOpen()" (click)="slidesOpen.set(!slidesOpen())">
+            {{ slidesOpen() ? 'Hide slides' : 'Show slides' }}
+          </button>
+        </div>
       </div>
+      <div class="board-sidebar" [hidden]="!boardSidebarOpen()">
       <aside class="slides" [hidden]="!slidesOpen()">
         <h2>Slides</h2>
         <nav aria-label="Whiteboard slides">
@@ -56,6 +64,15 @@
           </div>
         }
       </aside>
+      @if (sharedCalculator(); as teacherCalculator) {
+        <app-whiteboard-calculator [shared]="teacherCalculator" />
+      }
+      @if (calculatorOpen()) {
+        <app-whiteboard-calculator [sharingAvailable]="calculatorSharingAvailable()"
+          [sharingUnavailable]="calculatorSharingUnavailable()"
+          (previewChanged)="setCalculatorPreview($event)" (closed)="calculatorOpen.set(false)" />
+      }
+      </div>
 
       <div class="workspace">
         <div class="tools" role="group" aria-label="Whiteboard tools">

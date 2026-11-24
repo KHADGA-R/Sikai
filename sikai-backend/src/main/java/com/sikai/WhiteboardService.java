@@ -2,6 +2,7 @@ package com.sikai;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Pattern;
@@ -17,7 +18,10 @@ public class WhiteboardService {
     private final ObjectMapper json;
     private record PreviewKey(String slotId, String userId) {}
     private record ActivePreview(String slideId, WhiteboardController.FlowPreview preview, long expiresAt) {}
+    private record ActiveCalculator(WhiteboardController.CalculatorPreview preview, long expiresAt) {}
+    public record ClassroomPreviews(List<WhiteboardController.FlowPreview> flows, WhiteboardController.CalculatorPreview calculator) {}
     private final Map<PreviewKey, ActivePreview> previews = new ConcurrentHashMap<>();
+    private final Map<String, ActiveCalculator> calculators = new ConcurrentHashMap<>();
 
     public WhiteboardService(Db db, ObjectMapper json) {
         this.db = db;
@@ -54,6 +58,7 @@ public class WhiteboardService {
             Map.entry("supportsLearningObjects", true),
             Map.entry("supportsHistogram", true),
             Map.entry("supportsFlowPreviews", true),
+            Map.entry("supportsCalculatorPreviews", true),
             Map.entry("supportsActivityWidgets", true),
             Map.entry("slides", slides), Map.entry("marks", marks), Map.entry("erasures", erasures), Map.entry("notes", notes));
     }
@@ -182,8 +187,9 @@ public class WhiteboardService {
         return slot;
     }
 
-    public Object flowPreviews(String slotId, WhiteboardController.FlowPulse input, AuthService.User user) {
-        access(slotId, user);
+    public ClassroomPreviews classroomPreviews(String slotId, WhiteboardController.FlowPulse input, AuthService.User user,
+                                               boolean includeCalculator) {
+        var slot = access(slotId, user);
         var key = new PreviewKey(slotId, user.id());
         var preview = input.preview();
         long now = System.currentTimeMillis();
@@ -196,10 +202,19 @@ public class WhiteboardService {
         } else {
             previews.remove(key);
         }
-        return previews.entrySet().stream()
+        var flows = previews.entrySet().stream()
             .filter(entry -> entry.getKey().slotId().equals(slotId) && !entry.getKey().equals(key)
                 && entry.getValue().slideId().equals(input.slideId()))
             .map(entry -> entry.getValue().preview()).toList();
+        if (!includeCalculator) return new ClassroomPreviews(flows, null);
+        calculators.entrySet().removeIf(entry -> entry.getValue().expiresAt() <= now);
+        if (user.id().equals(slot.get("owner_id"))) {
+            if (input.calculator() == null) calculators.remove(slotId);
+            else calculators.put(slotId, new ActiveCalculator(input.calculator(), now + 2500));
+            return new ClassroomPreviews(flows, null);
+        }
+        var calculator = calculators.get(slotId);
+        return new ClassroomPreviews(flows, calculator == null ? null : calculator.preview());
     }
 
     private void requireSlide(String slotId, String slideId) {

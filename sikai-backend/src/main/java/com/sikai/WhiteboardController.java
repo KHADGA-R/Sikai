@@ -39,7 +39,12 @@ public class WhiteboardController {
                               @Pattern(regexp="terminal|process|decision|inputOutput|predefined|document|manual|delay|preparation") String pickedShape,
                               boolean shapesOpen, boolean connecting,
                               @NotNull @Pattern(regexp="editing|typing|moving|resizing|routing") String action) {}
-    public record FlowPulse(@NotBlank @Size(max=36) String slideId, @Valid FlowPreview preview) {}
+    public record CalculatorPreview(@NotNull @Size(max=160) String expression, @NotNull @Size(max=160) String calculation,
+                                    @NotNull @Size(max=80) String error,
+                                    @NotNull @Pattern(regexp="standard|scientific") String mode,
+                                    @NotNull @Pattern(regexp="deg|rad") String angleUnit) {}
+    public record FlowPulse(@NotBlank @Size(max=36) String slideId, @Valid FlowPreview preview,
+                            @Valid CalculatorPreview calculator) {}
 
     private final WhiteboardService board;
 
@@ -91,7 +96,13 @@ public class WhiteboardController {
     @PostMapping("/flow-previews")
     public ResponseEntity<Object> flowPreviews(@PathVariable String slotId, @Valid @RequestBody FlowPulse input,
         @AuthenticationPrincipal AuthService.User user) {
-        return privateResponse(board.flowPreviews(slotId, input, user));
+        return privateResponse(board.classroomPreviews(slotId, input, user, false).flows());
+    }
+
+    @PostMapping("/classroom-previews")
+    public ResponseEntity<Object> classroomPreviews(@PathVariable String slotId, @Valid @RequestBody FlowPulse input,
+        @AuthenticationPrincipal AuthService.User user) {
+        return privateResponse(board.classroomPreviews(slotId, input, user, true));
     }
 
     @PatchMapping("/notes/{noteId}")
