@@ -1,0 +1,14 @@
+spring:
+  mail:
+    host: 127.0.0.1
+    port: 1025
+    username: ""
+    password: ""
+    properties:
+      mail.smtp.auth: false
+      mail.smtp.starttls.enable: false
+management:
+  health.mail.enabled: true
+sikai:
+  email-enabled: true
+  email-from: no-reply@sikai.test

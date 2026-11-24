@@ -138,6 +138,8 @@ mvn spring-boot:run
 
 Start Angular as usual. When publishing availability, choose **Sikai Video** in **Classroom**. The instructor and confirmed students can join starting five minutes before class. They enter a shared room beside the whiteboard, with microphones and cameras off initially. The instructor can share a screen. For a local test, publish a class starting within five minutes and join from separate instructor and student browser sessions.
 
+When class starts, choose **Presentation**, **Whiteboard view**, or **Split view**. On desktop, drag the split divider or use its arrow-key controls to resize the two panels. **Fullscreen** enlarges a shared screen. The camera strip keeps the instructor first and highlights active speakers. **All participants** opens the camera gallery, and **Leave class** disconnects the call and returns you to bookings.
+
 For production, use a browser-reachable `wss://` LiveKit address, production API credentials, and [LiveKit’s HTTPS and TURN deployment guidance](https://docs.livekit.io/transport/self-hosting/deployment/). Keep the API secret in the backend environment. Sikai does not configure recording, and room tokens grant only classroom media permissions.
 
 ## Configuration
@@ -162,6 +164,25 @@ Set environment variables in the terminal before starting the application.
 Spring Boot does not automatically read `.env` files in this project. Export variables in your shell. Docker Compose reads `.env` for its own substitutions.
 
 With SMTP enabled, the backend checks confirmed live-class bookings every 30 seconds and emails the student at the 24-hour and 15-minute marks. Bookings made after a reminder window opens are eligible for that window's reminder. Failed delivery is retried while the window remains open. The student countdown appears in **Live Classes → My bookings**.
+
+### Local email testing
+
+Start [Mailpit](https://mailpit.axllent.org/docs/install/) with both listeners bound to your machine:
+
+```cmd
+mailpit.exe --listen 127.0.0.1:8025 --smtp 127.0.0.1:1025
+```
+
+In your existing backend Command Prompt, stop Spring Boot, add the local email profile, and rerun your usual startup command:
+
+```cmd
+set "SPRING_PROFILES_INCLUDE=local-email"
+mvn spring-boot:run
+```
+
+The profile also works alongside the payment sandbox profile. If you already set `SPRING_PROFILES_INCLUDE`, append `,local-email` to its existing list. Book a class in Sikai and open `http://127.0.0.1:8025` to see the confirmation and any scheduled reminders. Mailpit captures messages in the local test inbox.
+
+For real delivery, start the regular backend without the `local-email` profile. Set `EMAIL_ENABLED=true`, a verified `EMAIL_FROM`, and your provider's SMTP host, port, username, and password in the launch environment. Docker Compose forwards the same settings to the backend. Keep the SMTP password out of Git.
 
 ### PostgreSQL
 

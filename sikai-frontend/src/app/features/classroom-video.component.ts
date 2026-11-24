@@ -1,6 +1,8 @@
-import { Component, DestroyRef, Directive, ElementRef, effect, inject, input, signal } from '@angular/core';
+import { Component, DestroyRef, Directive, ElementRef, computed, effect, inject, input, output, signal } from '@angular/core';
 import { Participant, Room, RoomEvent, Track } from 'livekit-client';
 import { ApiService } from '../core/api.service';
+
+export type ClassroomView = 'presentation' | 'whiteboard' | 'split';
 
 @Directive({ selector: '[classroomTrack]', standalone: true })
 export class ClassroomTrackDirective {
@@ -37,12 +39,27 @@ interface VideoParticipant {
 export class ClassroomVideoComponent {
   readonly slotId = input.required<string>();
   readonly autoJoin = input(false);
+  readonly view = input<ClassroomView>('whiteboard');
+  readonly instructorId = input('');
+  readonly shareChanged = output<boolean>();
+  readonly expandPresentation = output<void>();
+  readonly left = output<void>();
   private readonly api = inject(ApiService);
   private room?: Room;
   private triedAutoJoin = false;
   readonly state = signal<'idle' | 'connecting' | 'connected' | 'reconnecting'>('idle');
   readonly participants = signal<VideoParticipant[]>([]);
   readonly collapsed = signal(false);
+  readonly gallery = signal(false);
+  readonly activeSpeakers = signal<string[]>([]);
+  readonly fullscreen = signal(false);
+  readonly orderedParticipants = computed(() => {
+    const people = this.participants();
+    const teacher = people.find(person => person.id === this.instructorId());
+    return teacher ? [teacher, ...people.filter(person => person !== teacher)] : people;
+  });
+  readonly sharedScreens = computed(() => this.participants().filter(person => !!person.screen));
+  private hasScreen = false;
   readonly audioBlocked = signal(false);
   readonly microphone = signal(false);
   readonly camera = signal(false);
@@ -76,6 +93,9 @@ export class ClassroomVideoComponent {
       room.on(event, refresh);
     }
     room.on(RoomEvent.Reconnecting, () => { if (this.room === room) this.state.set('reconnecting'); });
+    room.on(RoomEvent.ActiveSpeakersChanged, speakers => {
+      if (this.room === room) this.activeSpeakers.set(speakers.map(speaker => speaker.identity));
+    });
     room.on(RoomEvent.Reconnected, () => {
       if (this.room !== room) return;
       this.state.set('connected');
@@ -112,6 +132,28 @@ export class ClassroomVideoComponent {
     if (room) await room.disconnect();
   }
 
+  async leaveClass(): Promise<void> {
+    try { await this.leave(); } finally { this.left.emit(); }
+  }
+
+  async toggleFullscreen(stage: HTMLElement): Promise<void> {
+    if (document.fullscreenElement) {
+      await document.exitFullscreen().catch(() => undefined);
+      return;
+    }
+    if (stage.requestFullscreen) {
+      try {
+        await stage.requestFullscreen();
+        return;
+      } catch { /* Presentation view is available if fullscreen is blocked. */ }
+    }
+    this.expandPresentation.emit();
+  }
+
+  updateFullscreen(): void {
+    this.fullscreen.set(!!document.fullscreenElement);
+  }
+
   async toggle(kind: 'camera' | 'microphone' | 'screen'): Promise<void> {
     const room = this.room;
     if (!room || this.state() !== 'connected' || this.changingMedia()) return;
@@ -141,6 +183,11 @@ export class ClassroomVideoComponent {
     const local = room.localParticipant;
     const participants = [local, ...room.remoteParticipants.values()];
     this.participants.set(participants.map(participant => this.participantView(participant, participant === local)));
+    const sharingScreen = this.sharedScreens().length > 0;
+    if (sharingScreen !== this.hasScreen) {
+      this.hasScreen = sharingScreen;
+      this.shareChanged.emit(sharingScreen);
+    }
     this.microphone.set(local.isMicrophoneEnabled);
     this.camera.set(local.isCameraEnabled);
     this.sharing.set(local.isScreenShareEnabled);
@@ -162,6 +209,12 @@ export class ClassroomVideoComponent {
     this.room = undefined;
     this.state.set('idle');
     this.participants.set([]);
+    this.activeSpeakers.set([]);
+    this.gallery.set(false);
+    if (this.hasScreen) {
+      this.hasScreen = false;
+      this.shareChanged.emit(false);
+    }
     this.microphone.set(false);
     this.camera.set(false);
     this.sharing.set(false);

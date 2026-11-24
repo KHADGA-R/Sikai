@@ -1,5 +1,5 @@
 import { Component, DestroyRef, computed, inject, signal } from '@angular/core';
-import { ActivatedRoute, RouterLink } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { ApiError, ApiService } from '../core/api.service';
 import { AuthService } from '../core/auth.service';
 import { isCurrentLiveSlot, latestCompletedSlotId, LIVE_CLASS_JOIN_LEAD_MS, safeMeetingUrl } from '../core/live-classes';
@@ -7,6 +7,7 @@ import { LiveClassesService } from '../core/live-classes.service';
 import { NotePatch, StickyNote, WhiteboardNoteComponent } from './whiteboard-note.component';
 import { ThemeIconComponent } from '../shared/theme-icon.component';
 import { ClassroomVideoComponent } from './classroom-video.component';
+import type { ClassroomView } from './classroom-video.component';
 
 type Shape = 'line' | 'rectangle' | 'ellipse' | 'circle' | 'arrow';
 type Tool = 'pen' | 'highlighter' | 'text' | Shape;
@@ -41,6 +42,7 @@ export class WhiteboardComponent {
   private readonly auth = inject(AuthService);
   private readonly live = inject(LiveClassesService);
   private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
   readonly slotId = this.route.snapshot.paramMap.get('slotId')!;
   readonly autoJoinVideo = this.route.snapshot.queryParamMap.get('video') === 'join';
   private readonly resource = '/live-classes/slots/' + encodeURIComponent(this.slotId) + '/whiteboard';
@@ -132,6 +134,17 @@ export class WhiteboardComponent {
     const now = this.now();
     return !!room && (isCurrentLiveSlot(room, now) || latestCompletedSlotId(this.live.state(), now) === this.slotId);
   });
+  readonly slidesOpen = signal(true);
+  readonly wideClassroom = signal(window.matchMedia('(min-width: 920px)').matches);
+  private readonly requestedView = signal<ClassroomView>('whiteboard');
+  private selectedViewManually = false;
+  readonly boardShare = signal(52);
+  readonly classroomView = computed<ClassroomView>(() => {
+    if (!this.whiteboardOpen()) return 'presentation';
+    const view = this.requestedView();
+    return view === 'split' && !this.wideClassroom() ? 'whiteboard' : view;
+  });
+  private splitPointer?: number;
 
   constructor() {
     void this.refresh(true);
@@ -139,7 +152,56 @@ export class WhiteboardComponent {
       this.now.set(Date.now());
       if (!document.hidden && !this.busy()) void this.refresh();
     }, 2000);
-    inject(DestroyRef).onDestroy(() => { window.clearInterval(timer); this.requestId++; });
+    const viewport = window.matchMedia('(min-width: 920px)');
+    const onResize = (event: MediaQueryListEvent) => this.wideClassroom.set(event.matches);
+    viewport.addEventListener('change', onResize);
+    inject(DestroyRef).onDestroy(() => {
+      window.clearInterval(timer);
+      viewport.removeEventListener('change', onResize);
+      this.requestId++;
+    });
+  }
+
+  selectView(view: ClassroomView): void {
+    this.selectedViewManually = true;
+    this.requestedView.set(view);
+    if (view === 'split') this.slidesOpen.set(false);
+  }
+
+  onShareChanged(sharing: boolean): void {
+    if (!this.selectedViewManually) this.requestedView.set(sharing ? 'presentation' : 'whiteboard');
+  }
+
+  leaveClassroom(): void {
+    void this.router.navigate(['/live-classes'], { queryParams: { view: 'bookings' } });
+  }
+
+  startSplit(event: PointerEvent, divider: HTMLElement): void {
+    if (event.button !== 0 || this.splitPointer !== undefined) return;
+    event.preventDefault();
+    divider.focus();
+    divider.setPointerCapture(event.pointerId);
+    this.splitPointer = event.pointerId;
+  }
+
+  resizeSplit(event: PointerEvent, layout: HTMLElement): void {
+    if (event.pointerId !== this.splitPointer) return;
+    const bounds = layout.getBoundingClientRect();
+    if (bounds.width) this.setBoardShare((event.clientX - bounds.left) / bounds.width * 100);
+  }
+
+  finishSplit(event: PointerEvent): void {
+    if (event.pointerId === this.splitPointer) this.splitPointer = undefined;
+  }
+
+  keyboardSplit(event: KeyboardEvent): void {
+    if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+    event.preventDefault();
+    this.setBoardShare(this.boardShare() + (event.key === 'ArrowRight' ? 3 : -3));
+  }
+
+  private setBoardShare(value: number): void {
+    this.boardShare.set(Math.max(30, Math.min(70, Math.round(value))));
   }
 
   private async refresh(force = false): Promise<void> {

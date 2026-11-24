@@ -19,9 +19,26 @@
     @if (!whiteboardOpen()) {
       <p class="board-note video-status">{{ now() < room.start ? 'The whiteboard opens when the class starts.' : 'Review is available for your most recently completed class.' }}</p>
     }
-    <div class="board-layout" [class.with-video]="videoOpen() && whiteboardOpen()" [class.video-only]="!whiteboardOpen()">
+    @if (videoOpen() && whiteboardOpen()) {
+      <div class="classroom-views" role="group" aria-label="Classroom view">
+        <button type="button" [attr.aria-pressed]="classroomView() === 'presentation'" (click)="selectView('presentation')">Presentation</button>
+        <button type="button" [attr.aria-pressed]="classroomView() === 'whiteboard'" (click)="selectView('whiteboard')">Whiteboard view</button>
+        @if (wideClassroom()) {
+          <button type="button" [attr.aria-pressed]="classroomView() === 'split'" (click)="selectView('split')">Split view</button>
+        }
+      </div>
+    }
+    <div #classroomLayout class="board-layout" [class.split-view]="videoOpen() && classroomView() === 'split'"
+      [class.camera-first]="videoOpen() && classroomView() === 'whiteboard'" [style.--board-width]="boardShare() + '%'">
       @if (whiteboardOpen()) {
-      <aside class="panel slides">
+      <section class="panel board-workspace" [class.slides-collapsed]="!slidesOpen()" [hidden]="videoOpen() && classroomView() === 'presentation'">
+      <div class="whiteboard-panel-heading">
+        <h2>Whiteboard</h2>
+        <button type="button" class="slides-toggle" [attr.aria-expanded]="slidesOpen()" (click)="slidesOpen.set(!slidesOpen())">
+          {{ slidesOpen() ? 'Hide slides' : 'Show slides' }}
+        </button>
+      </div>
+      <aside class="slides" [hidden]="!slidesOpen()">
         <h2>Slides</h2>
         <nav aria-label="Whiteboard slides">
           @for (slide of slides(); track slide.id) {
@@ -40,7 +57,7 @@
         }
       </aside>
 
-      <div class="panel workspace">
+      <div class="workspace">
         <div class="tools" role="group" aria-label="Whiteboard tools">
           <div class="drawing-tools" role="group" aria-label="Drawing tools">
             @for (item of drawingTools; track item.tool) {
@@ -163,10 +180,20 @@
         </div>
         <p class="board-note">Marks are shared with the class. Use Show marks to isolate a participant’s annotations.</p>
       </div>
+      </section>
+      }
+      @if (videoOpen() && classroomView() === 'split') {
+        <div #divider class="split-divider" role="separator" tabindex="0" aria-label="Resize whiteboard and presentation"
+          aria-orientation="vertical" aria-valuemin="30" aria-valuemax="70" [attr.aria-valuenow]="boardShare()"
+          (keydown)="keyboardSplit($event)" (pointerdown)="startSplit($event, divider)"
+          (pointermove)="resizeSplit($event, classroomLayout)" (pointerup)="finishSplit($event)"
+          (pointercancel)="finishSplit($event)" (lostpointercapture)="finishSplit($event)"></div>
       }
       @if (videoOpen()) {
         @defer (on immediate) {
-          <app-classroom-video [slotId]="slotId" [autoJoin]="autoJoinVideo" />
+          <app-classroom-video [slotId]="slotId" [autoJoin]="autoJoinVideo" [view]="classroomView()"
+            [instructorId]="room.instructorId" (shareChanged)="onShareChanged($event)"
+            (expandPresentation)="selectView('presentation')" (left)="leaveClassroom()" />
         } @loading {
           <p class="video-status" role="status">Loading video controls…</p>
         }

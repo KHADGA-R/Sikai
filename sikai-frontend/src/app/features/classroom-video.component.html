@@ -1,43 +1,7 @@
-<section class="panel video-panel" aria-label="Sikai Video">
+<section class="panel video-panel" aria-label="Sikai Video" (document:fullscreenchange)="updateFullscreen()">
   <div class="video-heading">
     <h2>Sikai Video</h2>
-    <button type="button" class="button outline" [attr.aria-expanded]="!collapsed()"
-      (click)="collapsed.set(!collapsed())">{{ collapsed() ? 'Show video' : 'Hide video' }}</button>
-  </div>
-  @for (participant of participants(); track participant.id) {
-    @for (audio of participant.audio; track audio.id) {
-      <audio autoplay [classroomTrack]="audio.track"></audio>
-    }
-  }
-  @if (!collapsed()) {
-    @if (error(); as problem) { <p class="error-note" role="alert">{{ problem }}</p> }
-    @switch (state()) {
-      @case ('idle') { <button type="button" class="button primary" (click)="join()">Join video</button> }
-      @case ('connecting') { <p role="status">Connecting to the classroom…</p> }
-      @case ('reconnecting') { <p role="status">Reconnecting…</p> }
-    }
     @if (state() === 'connected' || state() === 'reconnecting') {
-      @if (audioBlocked()) { <button type="button" class="button outline" (click)="enableAudio()">Enable audio</button> }
-      @for (participant of participants(); track participant.id) {
-        @if (participant.screen; as screen) {
-          <figure class="video-tile screen-tile">
-            <video autoplay playsinline muted [classroomTrack]="screen" [attr.aria-label]="participant.name + ' screen'"></video>
-            <figcaption>{{ participant.name }} is sharing their screen</figcaption>
-          </figure>
-        }
-      }
-      <div class="video-grid">
-        @for (participant of participants(); track participant.id) {
-          <figure class="video-tile">
-            @if (participant.camera; as track) {
-              <video autoplay playsinline muted [classroomTrack]="track" [attr.aria-label]="participant.name + ' camera'"></video>
-            } @else {
-              <div class="video-avatar" aria-hidden="true">{{ participant.name.slice(0, 1) }}</div>
-            }
-            <figcaption>{{ participant.name }}{{ participant.local ? ' (you)' : '' }}</figcaption>
-          </figure>
-        }
-      </div>
       <div class="video-controls">
         <button type="button" [attr.aria-pressed]="microphone()" [disabled]="changingMedia() || state() !== 'connected'"
           (click)="toggle('microphone')">{{ microphone() ? 'Mute' : 'Turn on microphone' }}</button>
@@ -47,8 +11,59 @@
           <button type="button" [attr.aria-pressed]="sharing()" [disabled]="changingMedia() || state() !== 'connected'"
             (click)="toggle('screen')">{{ sharing() ? 'Stop sharing' : 'Share screen' }}</button>
         }
-        <button type="button" class="leave" (click)="leave()">Leave video</button>
+        <button type="button" class="leave" (click)="leaveClass()">Leave class</button>
       </div>
     }
+  </div>
+  @for (participant of participants(); track participant.id) {
+    @for (audio of participant.audio; track audio.id) {
+      <audio autoplay [classroomTrack]="audio.track"></audio>
+    }
+  }
+  @if (error(); as problem) { <p class="error-note" role="alert">{{ problem }}</p> }
+  @switch (state()) {
+    @case ('idle') { <button type="button" class="button primary" (click)="join()">Join video</button> }
+    @case ('connecting') { <p role="status">Connecting to the classroom…</p> }
+    @case ('reconnecting') { <p role="status">Reconnecting…</p> }
+  }
+  @if (state() === 'connected' || state() === 'reconnecting') {
+    @if (audioBlocked()) { <button type="button" class="button outline" (click)="enableAudio()">Enable audio</button> }
+    <div class="screen-list" [hidden]="view() === 'whiteboard'">
+      @for (participant of sharedScreens(); track participant.id) {
+        @if (participant.screen; as screen) {
+          <figure #stage class="video-tile screen-tile">
+            <video autoplay playsinline muted [classroomTrack]="screen" [attr.aria-label]="participant.name + ' screen'"></video>
+            <figcaption>
+              <span>{{ participant.name }} is sharing their screen</span>
+              <button type="button" (click)="toggleFullscreen(stage)">{{ fullscreen() ? 'Exit fullscreen' : 'Fullscreen' }}</button>
+            </figcaption>
+          </figure>
+        }
+      }
+      @if (!sharedScreens().length) { <p class="video-placeholder">No screen is being shared.</p> }
+    </div>
+    <div class="participant-heading">
+      <button type="button" [attr.aria-expanded]="!collapsed()"
+        (click)="collapsed.set(!collapsed())">{{ collapsed() ? 'Show cameras' : 'Hide cameras' }}</button>
+      <button type="button" [attr.aria-pressed]="gallery()" (click)="collapsed.set(false); gallery.set(!gallery())">
+        {{ gallery() ? 'Camera strip' : 'All participants (' + participants().length + ')' }}
+      </button>
+    </div>
+    <div class="video-grid" [class.gallery]="gallery()" [hidden]="collapsed()" aria-label="Participant cameras">
+        @for (participant of orderedParticipants(); track participant.id) {
+          <figure class="video-tile" [class.speaking]="activeSpeakers().includes(participant.id)">
+            @if (participant.camera; as track) {
+              <video autoplay playsinline muted [classroomTrack]="track" [attr.aria-label]="participant.name + ' camera'"></video>
+            } @else {
+              <div class="video-avatar" aria-hidden="true">{{ participant.name.slice(0, 1) }}</div>
+            }
+            <figcaption>
+              {{ participant.name }}{{ participant.local ? ' (you)' : '' }}
+              @if (participant.id === instructorId()) { <span> · Teacher</span> }
+              @if (activeSpeakers().includes(participant.id)) { <span class="sr-status"> · Speaking</span> }
+            </figcaption>
+          </figure>
+        }
+    </div>
   }
 </section>
