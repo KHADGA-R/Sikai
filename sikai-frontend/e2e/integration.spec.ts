@@ -111,6 +111,7 @@ test('instructor publishes an uploaded course; student enrolls, opens its file a
 });
 
 test('live teacher availability, student booking, messaging, meeting link and cancellation cross accounts', async ({ page, browser }) => {
+  test.setTimeout(120_000);
   await register(page, 'instructor', 'Live Teacher');
   await page.goto('/instructor/about');
   await page.getByRole('combobox', { name: 'Teaching subject', exact: true }).selectOption('Music');
@@ -284,6 +285,7 @@ test('live teacher availability, student booking, messaging, meeting link and ca
       }
       if (kind === 'Bar graph') {
         await expect(student.getByLabel('Bar 2 label')).toHaveValue('B');
+        await expect(student.getByRole('img', { name: 'Value axis from 0 to 20' })).toBeVisible();
         await page.getByRole('button', { name: '+ Bar', exact: true }).click();
         await expect(student.getByLabel('Bar 5 label')).toHaveValue('E');
         await page.getByRole('button', { name: 'Remove last bar' }).click();
@@ -291,8 +293,108 @@ test('live teacher availability, student booking, messaging, meeting link and ca
       }
       if (kind === 'Flowchart') {
         const flowchart = page.locator('app-whiteboard-note').filter({ has: editor });
+        const handle = flowchart.getByRole('button', { name: 'Resize flowchart step 1' });
+        await expect(handle).toBeEmpty();
+        await expect(handle).toHaveCSS('cursor', 'nwse-resize');
+        await handle.scrollIntoViewIfNeeded();
+        const box = (await handle.boundingBox())!;
+        await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+        await page.mouse.down();
+        await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2 + 16, { steps: 4 });
+        await page.mouse.up();
+        await expect(sharedField.locator('..')).toHaveCSS('height', '48px');
+        await expect(student.getByLabel('Flowchart step 2').locator('..')).toHaveCSS('height', '32px');
+        const palette = flowchart.getByRole('group', { name: 'Flowchart shapes' });
+        const shapes = flowchart.getByRole('button', { name: 'Shapes' });
+        await expect(palette).toHaveCount(0);
+        await shapes.click();
+        await palette.getByRole('button', { name: 'Decision', exact: true }).dragTo(editor);
+        await shapes.click();
+        await page.getByRole('button', { name: 'Add child to flowchart step 1' }).click();
+        const child = page.getByLabel('Flowchart step 4', { exact: true });
+        await child.fill('Try another rhythm');
+        await child.press('Tab');
+        const sharedBranch = student.getByRole('list', { name: 'Branches from step 1' });
+        await expect(sharedBranch.getByLabel('Flowchart step 4')).toHaveValue('Try another rhythm');
+        await expect(sharedField.locator('..')).toHaveAttribute('data-shape', 'decision');
+        await editor.click();
+        await flowchart.getByRole('button', { name: 'Bold', exact: true }).click();
+        await flowchart.getByRole('button', { name: 'Italic', exact: true }).click();
+        await flowchart.getByRole('button', { name: 'Increase font size' }).click();
+        await flowchart.getByLabel('Box background color').fill('#fff0ab');
+        await flowchart.getByLabel('Font color').fill('#334455');
+        await expect(sharedField).toHaveCSS('font-weight', '700');
+        await expect(sharedField).toHaveCSS('font-style', 'italic');
+        await expect(sharedField).toHaveCSS('font-size', '13px');
+        await expect(sharedField).toHaveCSS('color', 'rgb(51, 68, 85)');
+        await expect(sharedField.locator('..').locator('svg path')).toHaveCSS('fill', 'rgb(255, 240, 171)');
+        await flowchart.getByRole('button', { name: 'Connect', exact: true }).click();
+        await flowchart.getByRole('button', { name: 'Connect flowchart step 4' }).click();
+        await flowchart.getByRole('button', { name: 'Connect flowchart step 2' }).click();
+        const sharedLink = student.locator('.flow-links [data-from="3"][data-to="1"] path');
+        await expect(sharedLink).toHaveAttribute('d', /^M.+/);
+        const originalRoute = await sharedLink.getAttribute('d');
+        await expect(flowchart.getByRole('button', { name: 'Adjust arrows' })).toHaveCount(0);
+        const grip = flowchart.locator('[data-from="3"][data-to="1"] .flow-link-grip');
+        await grip.hover();
+        const linkBounds = (await grip.boundingBox())!;
+        const linkPoint = { x: linkBounds.x + linkBounds.width / 2, y: linkBounds.y + linkBounds.height / 2 };
+        await page.mouse.move(linkPoint.x, linkPoint.y);
+        await page.mouse.down();
+        await page.mouse.move(linkPoint.x, linkPoint.y + 20, { steps: 4 });
+        await page.mouse.up();
+        await expect(sharedLink).not.toHaveAttribute('d', originalRoute!);
+        const position = (target: typeof sharedField) => target.locator('..').evaluate((box: HTMLElement) => {
+          const { x, y } = box.getBoundingClientRect();
+          return [Math.round(x), Math.round(y)];
+        });
+        const originalPosition = await position(sharedField);
+        const left = flowchart.getByRole('button', { name: 'Add box on the left of flowchart step 1' });
+        await expect(left).toHaveCSS('opacity', '0');
+        await left.hover();
+        await expect(left).toHaveCSS('opacity', '1');
+        await left.click();
+        await flowchart.getByRole('button', { name: 'Add box on the right of flowchart step 1' }).click();
+        const leftBox = student.getByLabel('Flowchart step 5');
+        const rightBox = student.getByLabel('Flowchart step 6');
+        await expect(leftBox).toBeVisible();
+        await expect(rightBox).toBeVisible();
+        expect((await leftBox.boundingBox())!.x).toBeLessThan((await sharedField.boundingBox())!.x);
+        expect((await rightBox.boundingBox())!.x).toBeGreaterThan((await sharedField.boundingBox())!.x);
+        await expect.poll(() => position(sharedField)).toEqual(originalPosition);
+        await expect(student.locator('.flow-links path')).toHaveCount(6);
+        const hoverGrip = flowchart.locator('[data-from="0"][data-to="5"] .flow-link-grip');
+        await expect(hoverGrip).toHaveCSS('opacity', '0');
+        await hoverGrip.hover();
+        await expect(hoverGrip).toHaveCSS('opacity', '1');
+        const sideLink = student.locator('.flow-links [data-from="0"][data-to="5"] path');
+        const sideRoute = await sideLink.getAttribute('d');
+        const beforeMove = await position(rightBox);
+        const moveEdge = flowchart.locator('[data-flow-index="5"] .flow-move-edge');
+        await moveEdge.hover();
+        const moveBounds = (await moveEdge.boundingBox())!;
+        const moveX = moveBounds.x + moveBounds.width / 2;
+        const moveY = moveBounds.y + moveBounds.height / 2;
+        await page.mouse.move(moveX, moveY);
+        await page.mouse.down();
+        await page.mouse.move(moveX, moveY + 24, { steps: 4 });
+        await page.mouse.up();
+        await expect.poll(() => position(rightBox)).toEqual([beforeMove[0], beforeMove[1] + 24]);
+        await expect(sideLink).not.toHaveAttribute('d', sideRoute!);
+        await expect.poll(() => position(sharedField)).toEqual(originalPosition);
+        await page.getByLabel('Flowchart step 6', { exact: true }).press('Delete');
+        await expect(rightBox).toHaveCount(0);
+        await expect(student.locator('.flow-links path')).toHaveCount(5);
+        await flowchart.getByRole('button', { name: 'Select flowchart for zoom' }).click();
+        const canvas = flowchart.getByRole('region', { name: /Flowchart canvas/ });
+        await canvas.hover();
+        await page.mouse.wheel(0, -120);
+        await expect(canvas.locator('.flow-tree')).toHaveCSS('zoom', '1.1');
+        await page.mouse.wheel(0, 120);
+        await expect(canvas.locator('.flow-tree')).toHaveCSS('zoom', '1');
         await flowchart.getByRole('button', { name: 'Rotate clockwise' }).click();
-        await expect(sharedField.locator('..')).toHaveCSS('rotate', '90deg');
+        await expect(student.locator('.flow.rotatable')).toHaveCSS('rotate', '90deg');
+        await expect(sharedField).toHaveValue(value);
       }
     }
     await insert.click();
@@ -302,6 +404,7 @@ test('live teacher availability, student booking, messaging, meeting link and ca
     await page.getByLabel('Bin 2 frequency').fill('7');
     await page.getByLabel('Bin 2 frequency').press('Tab');
     await expect(student.getByLabel('Bin 2 frequency')).toHaveValue('7');
+    await expect(student.getByRole('img', { name: 'Frequency axis from 0 to 8' })).toBeVisible();
     await expect(student.getByText('5 to <10', { exact: true })).toBeVisible();
     await student.getByRole('link', { name: 'Back to live classes' }).click();
     await student.route('**/api/live-classes/slots/*/join', route => route.fulfill({
