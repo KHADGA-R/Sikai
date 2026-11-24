@@ -43,6 +43,8 @@ public class WhiteboardController {
     public record NoteBounds(@Min(0) @Max(1000) int x, @Min(0) @Max(1000) int y,
                              @Min(120) @Max(1000) int width, @Min(140) @Max(1000) int height) {}
     public record NoteUpdate(@Size(max=12000) String text, @Valid NoteBounds bounds) {}
+    public record MathsMenuInput(@NotNull @Pattern(regexp="all|pre-k|elementary|secondary") String audience,
+                                 boolean showAll) {}
     public record FlowPreview(@NotBlank @Size(max=36) String noteId, @Size(max=12000) String text, @Valid NoteBounds bounds,
                               @Min(0) @Max(19) int selectedBox, @Min(0) @Max(19) Integer linkSource,
                               @Pattern(regexp="terminal|process|decision|inputOutput|predefined|document|manual|delay|preparation") String pickedShape,
@@ -70,6 +72,12 @@ public class WhiteboardController {
     public ResponseEntity<Object> image(@PathVariable String slotId, @PathVariable String slideId,
         @AuthenticationPrincipal AuthService.User user) {
         return privateResponse(board.image(slotId, slideId, user));
+    }
+
+    @PatchMapping("/maths-menu")
+    public void updateMathsMenu(@PathVariable String slotId, @Valid @RequestBody MathsMenuInput input,
+        @AuthenticationPrincipal AuthService.User user) {
+        board.updateMathsMenu(slotId, input, user);
     }
 
     @PostMapping("/slides")

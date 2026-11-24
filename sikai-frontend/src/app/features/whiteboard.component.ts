@@ -8,7 +8,7 @@ import { FlowPreview, NoteKind, NotePatch, StickyNote, WhiteboardNoteComponent }
 import { ThemeIconComponent } from '../shared/theme-icon.component';
 import { ClassroomVideoComponent } from './classroom-video.component';
 import { CalculatorPreview, WhiteboardCalculatorComponent } from './whiteboard-calculator.component';
-import { MATH_GRADES, MATH_SECTIONS, MATH_WIDGETS, MathWidget } from './whiteboard-math-tools';
+import { earlyMathTools, MATH_AUDIENCES, MATH_SECTIONS, MATH_WIDGETS, MathAudience, MathWidget } from './whiteboard-math-tools';
 import { DrawingSettings, DrawingTool, Shape, StrokeStyle, drawingOutline } from './whiteboard-drawing';
 import type { ClassroomView } from './classroom-video.component';
 
@@ -37,6 +37,8 @@ interface Board {
   supportsExpandedMathWidgets?: boolean;
   supportsAlgebraWidgets?: boolean;
   supportsAdvancedMathWidgets?: boolean;
+  mathsAudience?: MathAudience;
+  mathsShowAll?: boolean;
   supportsCalculatorPreviews?: boolean;
   supportsHistogram?: boolean;
 }
@@ -84,11 +86,15 @@ export class WhiteboardComponent {
     { kind: 'flowchart', label: 'Flowchart', icon: 'flowchart' },
     { kind: 'timer', label: 'Countdown timer', icon: 'timer' },
   ] as const;
-  readonly mathGrades = MATH_GRADES;
-  readonly mathGrade = signal(0);
+  readonly mathsAudiences = MATH_AUDIENCES;
+  readonly mathsAudience = computed(() => this.board()?.mathsAudience ?? 'all');
+  readonly mathsAudienceLabel = computed(() => MATH_AUDIENCES.find(item => item.value === this.mathsAudience())?.label ?? 'All grades');
+  readonly mathsShowAll = computed(() => !!this.board()?.mathsShowAll);
+  readonly earlyMaths = computed(() => this.mathsShowAll() ? [] : earlyMathTools(this.mathsAudience()));
   readonly mathSearch = signal('');
   readonly visibleMaths = computed(() => {
-    const grade = MATH_GRADES[this.mathGrade()] ?? MATH_GRADES[0];
+    const grade = this.mathsShowAll() ? MATH_AUDIENCES[0]
+      : MATH_AUDIENCES.find(item => item.value === this.mathsAudience()) ?? MATH_AUDIENCES[0];
     const query = this.mathSearch().trim().toLowerCase();
     return MATH_SECTIONS.map((label, section) => ({
       label, section, tools: MATH_WIDGETS.filter(tool => tool.section === section &&
@@ -570,6 +576,24 @@ export class WhiteboardComponent {
       : kind === 'ruler' || kind === '2d-shapes' ? room?.supportsGeometryWidgets : room?.supportsExpandedMathWidgets;
     if (supported) this.addNote('yellow', 'graph', false, kind);
     else this.error.set('Restart the Sikai backend with the current code, then reload to use Maths tools.');
+  }
+
+  updateMathsAudience(value: string): void {
+    const audience = MATH_AUDIENCES.find(item => item.value === value);
+    if (audience) this.updateMathsMenu(audience.value, false);
+  }
+
+  toggleMathsOverride(): void {
+    this.updateMathsMenu(this.mathsAudience(), !this.mathsShowAll());
+  }
+
+  private updateMathsMenu(audience: MathAudience, showAll: boolean): void {
+    const room = this.board();
+    if (!room?.instructor || !room.mathsAudience) return;
+    this.mathSearch.set('');
+    void this.write(async () => {
+      await this.api.request('PATCH', this.resource + '/maths-menu', { audience, showAll });
+    });
   }
 
   openScientificCalculator(): void {

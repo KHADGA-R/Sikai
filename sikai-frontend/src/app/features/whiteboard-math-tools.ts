@@ -68,8 +68,23 @@ export type MathWidget = Exclude<typeof MATH_WIDGETS[number]['kind'], MathShortc
 export function isMathShortcut(kind: string): kind is MathShortcut {
   return SHORTCUTS.some(shortcut => shortcut === kind);
 }
-export const MATH_GRADES = [
-  { label: 'All', min: -1, max: 12 }, { label: 'Pre-K', min: -1, max: -1 },
-  { label: 'Elementary (K–5)', min: 0, max: 5 }, { label: 'Secondary (6–8)', min: 6, max: 8 },
-  { label: 'High School (9–12)', min: 9, max: 12 },
+export const MATH_AUDIENCES = [
+  { value: 'all', label: 'All grades', min: -1, max: 12 },
+  { value: 'pre-k', label: 'Pre-K', min: -1, max: -1 },
+  { value: 'elementary', label: 'Elementary (K–5)', min: 0, max: 5 },
+  { value: 'secondary', label: 'Grades 6–12', min: 6, max: 12 },
 ] as const;
+export type MathAudience = typeof MATH_AUDIENCES[number]['value'];
+
+const EARLY_MATH_TOOLS = {
+  'pre-k': ['number-blocks', 'ten-frame', 'number-line', '2d-shapes'],
+  elementary: ['number-blocks', 'ten-frame', 'number-line', 'fraction-bars', '2d-shapes', 'ruler'],
+} as const satisfies Record<string, readonly MathWidget[]>;
+
+export function earlyMathTools(audience: MathAudience) {
+  const kinds = audience === 'pre-k' || audience === 'elementary' ? EARLY_MATH_TOOLS[audience] : [];
+  return kinds.map(kind => {
+    const tool = MATH_WIDGETS.find(item => item.kind === kind)!;
+    return { kind, label: tool.label, icon: tool.icon };
+  });
+}

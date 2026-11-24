@@ -65,12 +65,21 @@ public class WhiteboardService {
             Map.entry("supportsExpandedMathWidgets", true),
             Map.entry("supportsAlgebraWidgets", true),
             Map.entry("supportsAdvancedMathWidgets", true),
+            Map.entry("mathsAudience", slot.get("maths_audience")), Map.entry("mathsShowAll", slot.get("maths_show_all")),
             Map.entry("slides", slides), Map.entry("marks", marks), Map.entry("erasures", erasures), Map.entry("notes", notes));
     }
 
     public Object image(String slotId, String slideId, AuthService.User user) {
         access(slotId, user);
         return Map.of("image", db.one("SELECT image_data FROM live_board_slide WHERE slot_id=? AND id=?", slotId, slideId).get("image_data"));
+    }
+
+    @Transactional public void updateMathsMenu(String slotId, WhiteboardController.MathsMenuInput input, AuthService.User user) {
+        var slot = access(slotId, user);
+        Db.require(user.id().equals(slot.get("owner_id")), FORBIDDEN, "Only the instructor can change the class Maths menu");
+        db.update("""
+            UPDATE live_slot SET maths_audience=?,maths_show_all=?,board_revision=board_revision+1 WHERE id=?
+            """, input.audience(), input.showAll() && !input.audience().equals("all"), slotId);
     }
 
     @Transactional public Object addSlide(String slotId, WhiteboardController.SlideInput input, AuthService.User user) {
@@ -188,7 +197,7 @@ public class WhiteboardService {
 
     private Map<String,Object> access(String slotId, AuthService.User user) {
         var slot = db.one("""
-            SELECT s.board_revision,s.closed,s.meeting_url,s.start_at,s.end_at,s.sikai_video,t.owner_id,t.subject FROM live_slot s
+            SELECT s.board_revision,s.closed,s.meeting_url,s.start_at,s.end_at,s.sikai_video,s.maths_audience,s.maths_show_all,t.owner_id,t.subject FROM live_slot s
             JOIN teacher t ON t.id=s.teacher_id WHERE s.id=?
             """, slotId);
         Db.require(!Boolean.TRUE.equals(slot.get("closed")) && (user.id().equals(slot.get("owner_id"))

@@ -52,12 +52,30 @@
             <h2>Maths</h2>
             <button type="button" aria-label="Close Maths tools" (click)="mathsOpen.set(false)">×</button>
           </div>
+          @if (room.instructor && room.mathsAudience) {
+            <label class="math-grade">Class audience <select aria-label="Maths audience" [value]="mathsAudience()" [disabled]="busy()"
+              (change)="updateMathsAudience($any($event.target).value)">
+              @for (audience of mathsAudiences; track audience.value) { <option [value]="audience.value">{{ audience.label }}</option> }
+            </select></label>
+            @if (mathsAudience() !== 'all') {
+              <button type="button" class="math-override" [disabled]="busy()" (click)="toggleMathsOverride()">
+                {{ mathsShowAll() ? 'Restore grade menu' : 'Show all tools for class' }}
+              </button>
+            }
+          } @else {
+            <p class="math-audience">{{ mathsShowAll() ? 'All tools' : mathsAudienceLabel() }}</p>
+          }
+          @if (earlyMaths().length) {
+            <div class="early-maths" role="group" aria-label="Starter Maths tools">
+              @for (item of earlyMaths(); track item.kind) {
+                <button type="button" (click)="insertMathTool(item.kind)">
+                  <app-theme-icon [name]="item.icon" /><span>{{ item.label }}</span>
+                </button>
+              }
+            </div>
+          } @else {
           <input class="math-search" type="search" aria-label="Search Maths tools" placeholder="Search tools"
             [value]="mathSearch()" (input)="mathSearch.set($any($event.target).value)" />
-          <label class="math-grade">Grade <select aria-label="Filter Maths tools by grade" [value]="mathGrade()"
-            (change)="mathGrade.set(+$any($event.target).value)">
-            @for (grade of mathGrades; track grade.label; let index = $index) { <option [value]="index">{{ grade.label }}</option> }
-          </select></label>
           <div class="maths-categories">
           @for (group of visibleMaths(); track group.label) {
             <details [open]="group.section === 0 || !!mathSearch().trim()">
@@ -83,6 +101,7 @@
           }
           @if (!visibleMaths().length) { <p class="board-note">No matching tools.</p> }
           </div>
+          }
         </aside>
       }
       <aside class="slides" [hidden]="!slidesOpen()">
