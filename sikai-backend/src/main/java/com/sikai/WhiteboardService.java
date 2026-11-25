@@ -36,7 +36,8 @@ public class WhiteboardService {
         var slides = db.list("SELECT id,title,image_data<>'' AS \"hasImage\" FROM live_board_slide WHERE slot_id=? ORDER BY position", slotId);
         var marks = db.list("""
             SELECT m.id,m.author_id AS "authorId",u.name AS "authorName",m.tool,m.color,m.points,m.label,
-                   m.stroke_style AS "strokeStyle",m.stroke_width AS "strokeWidth"
+                   m.stroke_style AS "strokeStyle",m.stroke_width AS "strokeWidth",m.box_width AS "boxWidth",
+                   m.text_revision AS "textRevision", m.equation, m.font_size AS "fontSize"
             FROM live_board_mark m JOIN app_user u ON u.id=m.author_id
             WHERE m.slot_id=? AND m.slide_id=? ORDER BY m.revision
             """, slotId, slideId);
@@ -111,11 +112,29 @@ public class WhiteboardService {
         String style = input.strokeStyle() == null ? "solid" : input.strokeStyle();
         int width = input.strokeWidth() == null ? ("highlighter".equals(input.tool()) ? 20 : 4) : input.strokeWidth();
         db.update("""
-            INSERT INTO live_board_mark(id,slot_id,slide_id,author_id,tool,color,points,label,revision,stroke_style,stroke_width)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?)
+            INSERT INTO live_board_mark(id,slot_id,slide_id,author_id,tool,color,points,label,revision,stroke_style,stroke_width,box_width,equation,font_size)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             """, id, slotId, input.slideId(), user.id(), input.tool(), input.color(),
-            json.valueToTree(input.points()).toString(), input.label().trim(), revision, style, width);
+            json.valueToTree(input.points()).toString(), input.label().trim(), revision, style, width,
+            "text".equals(input.tool()) ? input.boxWidth() : null,
+            "text".equals(input.tool()) && Boolean.TRUE.equals(input.equation()), input.fontSize() == null ? 24 : input.fontSize());
         return Map.of("id", id);
+    }
+
+    @Transactional public void updateText(String slotId, String markId, WhiteboardController.TextInput input, AuthService.User user) {
+        access(slotId, user);
+        long revision = nextRevision(slotId);
+        var mark = db.one("""
+            SELECT text_revision FROM live_board_mark WHERE id=? AND slot_id=? AND author_id=? AND tool='text'
+            """, markId, slotId, user.id());
+        Db.require(((Number) mark.get("text_revision")).longValue() == input.textRevision(), CONFLICT,
+            "This answer changed in another tab. Reopen it before saving.");
+        db.update("""
+            UPDATE live_board_mark SET label=?,points=?,box_width=?,color=?,text_revision=?,
+                equation=COALESCE(?,equation),font_size=COALESCE(?,font_size) WHERE id=?
+            """,
+            input.label().trim(), json.valueToTree(List.of(input.point())).toString(), input.boxWidth(),
+            input.color(), revision, input.equation(), input.fontSize(), markId);
     }
 
     @Transactional public void deleteMark(String slotId, String markId, AuthService.User user) {

@@ -5,6 +5,7 @@ import { ApiError, ApiService } from '../core/api.service';
 import { ThemeIconComponent } from '../shared/theme-icon.component';
 import { downloadAssignmentFile } from './assignment-files';
 import { AssignmentEquationComponent } from './assignment-equation.component';
+import { EquationKeypadComponent, selectEquationBlank } from './equation-keypad.component';
 import { WhiteboardCalculatorComponent } from './whiteboard-calculator.component';
 import { DrawingPoint, StrokeStyle, drawingOutline } from './whiteboard-drawing';
 import { InkPoint, pressureInk, smoothInk } from './assignment-ink';
@@ -33,7 +34,7 @@ interface Workspace {
 
 @Component({
   standalone: true,
-  imports: [RouterLink, ThemeIconComponent, NgTemplateOutlet, AssignmentEquationComponent, WhiteboardCalculatorComponent],
+  imports: [RouterLink, ThemeIconComponent, NgTemplateOutlet, AssignmentEquationComponent, EquationKeypadComponent, WhiteboardCalculatorComponent],
   template: `
     <section class="container section board-page">
       <a [routerLink]="backLink" [queryParams]="backQuery">{{ readOnly && studentId !== 'me' ? 'Back to submissions' : 'Back to assignments' }}</a>
@@ -238,15 +239,8 @@ interface Workspace {
                       <app-assignment-equation [expression]="entry.mark.text" />
                     </div>
                   }
-                  <div class="equation-keypad" role="group" aria-label="Equation keypad">
-                    @for (key of equationKeys; track key.value) {
-                      <button type="button" [attr.aria-label]="key.label" [attr.title]="key.label"
-                              (click)="insertEquation(key.value)">{{ key.display }}</button>
-                    }
-                    @if (entry.mark.text?.includes('□')) {
-                      <button type="button" (click)="nextEquationBlank()">Next blank</button>
-                    }
-                  </div>
+                  <app-equation-keypad [field]="answerInput" [hasBlank]="!!entry.mark.text?.includes('□')"
+                                       (changed)="editAnswerText($event)" />
                 }
                 <div class="answer-actions">
                   <button type="button" class="icon-button answer-handle drag-answer" aria-label="Move answer" title="Drag to move"
@@ -355,8 +349,6 @@ interface Workspace {
     .answer-actions { display: flex; gap: 5px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
     .answer-actions .icon-button { width: 32px; height: 32px; flex-shrink: 0; }
     .answer-actions app-theme-icon { width: 16px; height: 16px; }
-    .equation-keypad { display: flex; flex-wrap: wrap; gap: 4px; width: max-content; max-width: min(360px, 72vw); background: white; padding: 5px; border: 1px solid #bcc7c5; border-radius: 7px; }
-    .equation-keypad button { min-width: 33px; min-height: 33px; padding: 4px 6px; }
     .equation-preview { color: #17212f; font-size: 1rem; background: #fff; padding: 4px 6px; border-radius: 5px; overflow-x: auto; }
     .answer-handle { touch-action: none; }
     .drag-answer { cursor: move; margin-right: auto; }
@@ -398,17 +390,6 @@ export class AssignmentWhiteboardComponent implements OnDestroy {
   readonly shapes: { id: Shape; label: string }[] = [
     { id: 'line', label: 'Line' }, { id: 'arrow', label: 'Arrow' }, { id: 'rectangle', label: 'Rectangle' },
     { id: 'ellipse', label: 'Ellipse' }, { id: 'circle', label: 'Circle' },
-  ];
-  readonly equationKeys = [
-    { label: 'Fraction', display: '½', value: 'frac(□,□)' },
-    { label: 'Exponent', display: 'xⁿ', value: 'pow(□,□)' },
-    { label: 'Square root', display: '√', value: 'sqrt(□)' },
-    { label: 'Subscript', display: 'xₙ', value: 'sub(□,□)' },
-    ...[
-      ['+', 'Plus'], ['−', 'Minus'], ['×', 'Multiply'], ['÷', 'Divide'], ['=', 'Equals'],
-      ['≠', 'Not equal'], ['≤', 'Less than or equal'], ['≥', 'Greater than or equal'],
-      ['π', 'Pi'], ['°', 'Degrees'], ['%', 'Percent'], ['(', 'Open parenthesis'], [')', 'Close parenthesis'],
-    ].map(([value, label]) => ({ label, display: value, value })),
   ];
   readonly tool = signal<Tool>('pen');
   readonly zoom = signal(100);
@@ -718,31 +699,6 @@ export class AssignmentWhiteboardComponent implements OnDestroy {
     this.updateAnswer(mark => ({ ...mark, text }));
   }
 
-  insertEquation(value: string): void {
-    const field = this.answerInput()?.nativeElement;
-    if (!field) return;
-    const start = field.selectionStart;
-    const end = field.selectionEnd;
-    const selected = field.value.slice(start, end);
-    const insertion = selected && selected !== '□' ? value.replace('□', selected) : value;
-    if (field.value.length - (end - start) + insertion.length > field.maxLength) return;
-    field.setRangeText(insertion, start, end, 'end');
-    this.editAnswerText(field.value);
-    field.focus();
-    const blank = insertion.indexOf('□');
-    if (blank >= 0) field.setSelectionRange(start + blank, start + blank + 1);
-  }
-
-  nextEquationBlank(): void {
-    const field = this.answerInput()?.nativeElement;
-    if (!field) return;
-    const next = field.value.indexOf('□', field.selectionEnd);
-    const blank = next >= 0 ? next : field.value.indexOf('□');
-    if (blank >= 0) {
-      field.focus();
-      field.setSelectionRange(blank, blank + 1);
-    }
-  }
 
   startAnswerGesture(event: PointerEvent, mode: 'move' | 'resize'): void {
     const mark = this.editor()?.mark;
@@ -812,7 +768,7 @@ export class AssignmentWhiteboardComponent implements OnDestroy {
     if (!entry) return true;
     const text = entry.mark.text?.trim();
     if (entry.mark.equation && text?.includes('□')) {
-      this.nextEquationBlank();
+      selectEquationBlank(this.answerInput()?.nativeElement);
       return false;
     }
     if (text) {

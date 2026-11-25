@@ -19,9 +19,15 @@ public class WhiteboardController {
                             @Pattern(regexp="pen|highlighter|text|line|rectangle|ellipse|circle|arrow") @NotNull String tool,
                             @Pattern(regexp="#[0-9a-fA-F]{6}") @NotNull String color,
                             @NotEmpty @Size(max=180) List<@NotNull @Valid Point> points,
-                            @NotNull @Size(max=200) String label,
+                            @NotNull @Size(max=1000) String label,
                             @Pattern(regexp="solid|dashed|dotted") String strokeStyle,
-                            @Min(2) @Max(20) Integer strokeWidth) {}
+                            @Min(2) @Max(20) Integer strokeWidth,
+                            @DecimalMin("0.15") @DecimalMax("0.85") Double boxWidth,
+                            Boolean equation, @Min(16) @Max(48) Integer fontSize) {}
+    public record TextInput(@NotBlank @Size(max=1000) String label, @NotNull @Valid Point point,
+                            @NotNull @DecimalMin("0.15") @DecimalMax("0.85") Double boxWidth,
+                            @NotNull @Pattern(regexp="#[0-9a-fA-F]{6}") String color,
+                            @PositiveOrZero long textRevision, Boolean equation, @Min(16) @Max(48) Integer fontSize) {}
 
     public record EraseInput(@NotBlank @Size(max=36) String slideId,
                              @NotEmpty @Size(max=500) List<@NotBlank @Size(max=36) String> markIds,
@@ -90,6 +96,12 @@ public class WhiteboardController {
     public Object addMark(@PathVariable String slotId, @Valid @RequestBody MarkInput input,
         @AuthenticationPrincipal AuthService.User user) {
         return board.addMark(slotId, input, user);
+    }
+
+    @PatchMapping("/marks/{markId}/text")
+    public void updateText(@PathVariable String slotId, @PathVariable String markId, @Valid @RequestBody TextInput input,
+                           @AuthenticationPrincipal AuthService.User user) {
+        board.updateText(slotId, markId, input, user);
     }
 
     @DeleteMapping("/marks/{markId}")

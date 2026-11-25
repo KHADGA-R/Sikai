@@ -206,12 +206,22 @@
           <button type="button" class="icon-button undo" aria-label="Undo my mark" title="Undo my mark"
             [disabled]="!lastOwnMark() || busy()" (click)="undo()"><app-theme-icon name="undo" /></button>
         </div>
-        @if (tool() !== 'eraser') {
+        @if (tool() !== 'eraser' || answer()) {
           <div class="tool-settings" role="group" aria-label="Selected tool settings">
             <label class="color-control" title="Color">
               <app-theme-icon name="palette" />
               <input aria-label="Color" type="color" [value]="color()" (input)="color.set($any($event.target).value)" />
             </label>
+            @if (tool() === 'text' || tool() === 'equation' || answer()) {
+              <div class="font-size-stepper" role="group" aria-label="Font size">
+                <button type="button" aria-label="Decrease font size" title="Decrease font size"
+                        [disabled]="busy() || currentTextSize() <= 16" (click)="stepTextSize(-1)">A−</button>
+                <output aria-label="Current font size">{{ currentTextSize() }}</output>
+                <button type="button" aria-label="Increase font size" title="Increase font size"
+                        [disabled]="busy() || currentTextSize() >= 48" (click)="stepTextSize(1)">A+</button>
+              </div>
+              <p class="tool-note">{{ tool() === 'equation' ? 'Tap the board to place an equation, then fill in the keypad blanks.' : 'Tap the board to type, or tap one of your answers to edit or move it.' }}</p>
+            }
             @if (activeShape()) {
               <div class="stroke-options" role="group" aria-label="Shape stroke style">
                 @for (style of strokeStyles; track style.value) {
@@ -231,11 +241,6 @@
             }
           </div>
         }
-        @if (tool() === 'text') {
-          <label class="text-control">Text to place
-            <input type="text" [value]="text()" (input)="text.set($any($event.target).value)" maxlength="200" placeholder="Type here, then tap the board" />
-          </label>
-        }
         @if (tool() === 'eraser') {
           <p class="tool-note">Drag to erase parts of your marks. Scroll up over the board for a bigger eraser or down for a smaller one.</p>
         }
@@ -244,7 +249,8 @@
         }
         <div class="surface">
           @if (image(); as background) { <img [src]="background" [alt]="selected().title" /> }
-          <svg #surface viewBox="0 0 1000 562" preserveAspectRatio="none" [class.erasing]="tool() === 'eraser'" [attr.aria-label]="selected().title + ' drawing surface'"
+          <svg #surface viewBox="0 0 1000 562" preserveAspectRatio="none" [class.erasing]="tool() === 'eraser'"
+            [class.editing-text]="tool() === 'text' || tool() === 'equation'" [attr.aria-label]="selected().title + ' drawing surface'"
             (pointerdown)="startStroke($event, surface)" (pointermove)="moveStroke($event, surface)"
             (pointerup)="finishStroke($event, surface)" (pointerleave)="eraserCursor.set(null)" (wheel)="resizeEraser($event, surface)"
             (pointercancel)="cancelPointer($event)" (lostpointercapture)="cancelPointer($event)">
@@ -266,11 +272,23 @@
                   </mask>
                 </defs>
               }
-              <g [attr.data-erase-id]="ownMark ? mark.id : null" [attr.mask]="masked ? 'url(#erase-' + mark.id + ')' : null">
+              <g [attr.data-erase-id]="ownMark ? mark.id : null" [attr.mask]="masked ? 'url(#erase-' + mark.id + ')' : null"
+                 [attr.visibility]="answer()?.id === mark.id ? 'hidden' : null">
                 <title>{{ mark.authorName }}</title>
                 @if (mark.tool === 'text') {
-                  <text [attr.x]="mark.points[0].x * 1000" [attr.y]="mark.points[0].y * 562"
-                    [attr.fill]="mark.color" dominant-baseline="hanging" font-size="24">{{ mark.label }}</text>
+                  @if (mark.boxWidth) {
+                    <foreignObject [attr.data-live-answer]="mark.id" [attr.x]="mark.points[0].x * 1000"
+                      [attr.y]="mark.points[0].y * 562" [attr.width]="mark.boxWidth * 1000" [attr.height]="(1 - mark.points[0].y) * 562">
+                      <div xmlns="http://www.w3.org/1999/xhtml" class="live-answer" [style.color]="mark.color"
+                           [style.font-size.px]="mark.fontSize ?? 24">
+                        @if (mark.equation) { <app-assignment-equation [expression]="mark.label" /> }
+                        @else { {{ mark.label }} }
+                      </div>
+                    </foreignObject>
+                  } @else {
+                    <text class="live-answer" [attr.data-live-answer]="mark.id" [attr.x]="mark.points[0].x * 1000" [attr.y]="mark.points[0].y * 562"
+                      [attr.fill]="mark.color" dominant-baseline="hanging" [attr.font-size]="mark.fontSize ?? 24">{{ mark.label }}</text>
+                  }
                 } @else {
                   @let path = outline(mark);
                   <path class="mark-stroke" [attr.data-tool]="mark.tool" [attr.d]="path" fill="none" [attr.stroke]="mark.color"
@@ -283,6 +301,40 @@
               <circle class="eraser-cursor" [attr.cx]="cursor.x * 1000" [attr.cy]="cursor.y * 562" [attr.r]="eraserRadius()" aria-hidden="true" />
             }
           </svg>
+          @if (answer(); as entry) {
+            <form class="live-answer-editor" aria-label="Live answer editor" [style.left.%]="entry.point.x * 100"
+                  [style.top.%]="entry.point.y * 100" [style.width.%]="entry.boxWidth * 100"
+                  [class.actions-above]="entry.point.y > .66" (submit)="applyAnswer($event)"
+                  (keydown.escape)="!busy() && answer.set(null)">
+              <textarea #liveAnswerInput [attr.aria-label]="entry.equation ? 'Type your equation' : 'Type your answer'"
+                        [value]="entry.label" [style.color]="entry.color" [style.font-size]="entry.fontSize / 10 + 'cqw'"
+                        [readonly]="busy()" maxlength="1000" rows="2" (input)="editAnswer(liveAnswerInput.value)"
+                        (keydown.control.enter)="applyAnswer($event)" (keydown.meta.enter)="applyAnswer($event)"></textarea>
+              @if (entry.equation) {
+                @if (entry.label) {
+                  <div class="live-equation-preview" aria-label="Equation preview">
+                    <app-assignment-equation [expression]="entry.label" />
+                  </div>
+                }
+                <app-equation-keypad [class.align-right]="entry.point.x > .3" [field]="liveAnswerInput"
+                                     [hasBlank]="entry.label.includes('□')" [disabled]="busy()"
+                                     (changed)="editAnswer($event)" />
+              }
+              <div class="live-answer-actions">
+                <button type="button" aria-label="Move answer" title="Drag to move" (pointerdown)="startAnswerDrag($event, 'move')"
+                  (pointermove)="moveAnswerDrag($event, surface)" (lostpointercapture)="endAnswerDrag($event)"
+                  (keydown)="nudgeAnswer($event, 'move')"><app-theme-icon name="move" /></button>
+                <button type="submit" aria-label="Apply answer" title="Apply"
+                        [disabled]="busy() || !entry.label.trim() || (entry.equation && entry.label.includes('□'))">
+                  <app-theme-icon name="check" /></button>
+                <button type="button" aria-label="Cancel answer" title="Cancel" [disabled]="busy()" (click)="answer.set(null)">
+                  <app-theme-icon name="close" /></button>
+                <button type="button" aria-label="Resize answer" title="Drag to resize" (pointerdown)="startAnswerDrag($event, 'resize')"
+                  (pointermove)="moveAnswerDrag($event, surface)" (lostpointercapture)="endAnswerDrag($event)"
+                  (keydown)="nudgeAnswer($event, 'resize')"><app-theme-icon name="resize" /></button>
+              </div>
+            </form>
+          }
           @for (note of notes(); track note.id) {
             <app-whiteboard-note [note]="note" [editable]="note.authorId === userId()"
               [gridDrawingSettings]="gridDrawingSettings()"

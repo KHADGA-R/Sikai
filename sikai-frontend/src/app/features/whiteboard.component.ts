@@ -1,4 +1,4 @@
-import { Component, DestroyRef, computed, inject, signal } from '@angular/core';
+import { Component, DestroyRef, ElementRef, computed, inject, signal, viewChild } from '@angular/core';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { ApiError, ApiService } from '../core/api.service';
 import { AuthService } from '../core/auth.service';
@@ -10,12 +10,15 @@ import { ClassroomVideoComponent } from './classroom-video.component';
 import { CalculatorPreview, WhiteboardCalculatorComponent } from './whiteboard-calculator.component';
 import { earlyMathTools, MATH_AUDIENCES, MATH_SECTIONS, MATH_WIDGETS, MathAudience, MathWidget } from './whiteboard-math-tools';
 import { DrawingSettings, DrawingTool, Shape, StrokeStyle, drawingOutline } from './whiteboard-drawing';
+import { AssignmentEquationComponent } from './assignment-equation.component';
+import { EquationKeypadComponent, selectEquationBlank } from './equation-keypad.component';
 import type { ClassroomView } from './classroom-video.component';
 
 type Tool = DrawingTool;
 interface Point { x: number; y: number; }
-interface Drawing { tool: Tool; color: string; points: Point[]; label: string; strokeStyle?: StrokeStyle; strokeWidth?: number; }
-interface Mark extends Drawing { id: string; authorId: string; authorName: string; }
+interface Drawing { tool: Tool; color: string; points: Point[]; label: string; strokeStyle?: StrokeStyle; strokeWidth?: number; boxWidth?: number; equation?: boolean; fontSize?: number; }
+interface Mark extends Drawing { id: string; authorId: string; authorName: string; textRevision?: number; }
+interface TextAnswer { id?: string; textRevision: number; point: Point; label: string; color: string; boxWidth: number; equation: boolean; fontSize: number; }
 interface Slide { id: string; title: string; hasImage: boolean; }
 interface Board {
   revision: number;
@@ -45,7 +48,7 @@ interface Board {
 
 @Component({
   standalone: true,
-  imports: [RouterLink, WhiteboardNoteComponent, ThemeIconComponent, ClassroomVideoComponent, WhiteboardCalculatorComponent],
+  imports: [RouterLink, WhiteboardNoteComponent, ThemeIconComponent, ClassroomVideoComponent, WhiteboardCalculatorComponent, AssignmentEquationComponent, EquationKeypadComponent],
   templateUrl: './whiteboard.component.html',
   styleUrl: './whiteboard.component.css',
 })
@@ -63,11 +66,12 @@ export class WhiteboardComponent {
   readonly board = signal<Board | null>(null);
   readonly image = signal('');
   readonly now = signal(Date.now());
-  readonly tool = signal<Tool | 'eraser'>('pen');
+  readonly tool = signal<Tool | 'eraser' | 'equation'>('pen');
   readonly drawingTools = [
     { tool: 'pen', label: 'Pen' },
     { tool: 'highlighter', label: 'Highlighter' },
     { tool: 'text', label: 'Text' },
+    { tool: 'equation', label: 'Equation' },
     { tool: 'eraser', label: 'Eraser' },
   ] as const;
   readonly shapes: readonly { tool: Shape; label: string; glyph: string }[] = [
@@ -114,10 +118,15 @@ export class WhiteboardComponent {
   readonly color = signal('#004c45');
   readonly gridDrawingSettings = computed<DrawingSettings>(() => {
     const tool = this.tool();
-    return { tool, color: this.color(), strokeStyle: this.strokeStyle(),
+    return { tool: tool === 'equation' ? 'text' : tool, color: this.color(), strokeStyle: this.strokeStyle(),
       width: tool === 'pen' ? this.penWidth() : tool === 'highlighter' ? 10 : 3 };
   });
-  readonly text = signal('');
+  readonly answer = signal<TextAnswer | null>(null);
+  readonly textSize = signal(24);
+  private readonly textSizes = [16, 20, 24, 32, 40, 48];
+  readonly currentTextSize = computed(() => this.answer()?.fontSize ?? this.textSize());
+  private readonly liveAnswerInput = viewChild<ElementRef<HTMLTextAreaElement>>('liveAnswerInput');
+  private answerDrag?: { id: number; kind: 'move' | 'resize'; startX: number; startY: number; answer: TextAnswer };
   readonly draft = signal<Drawing | null>(null);
   readonly eraserRadius = signal(15);
   readonly eraserStrokeRadius = signal(15);
@@ -340,6 +349,8 @@ export class WhiteboardComponent {
   }
 
   async select(slide: Slide): Promise<void> {
+    if (this.answer() && !window.confirm('Discard the open answer before changing slides?')) return;
+    this.answer.set(null);
     this.localFlowPreview = null;
     this.flowPreviews.set({});
     this.cancelStroke();
@@ -360,7 +371,7 @@ export class WhiteboardComponent {
     }
   }
 
-  setTool(tool: Tool | 'eraser'): void {
+  setTool(tool: Tool | 'eraser' | 'equation'): void {
     this.cancelStroke();
     this.tool.set(tool);
     if (tool !== 'eraser') this.color.set(tool === 'highlighter' ? '#ffd34e' : '#004c45');
@@ -373,7 +384,7 @@ export class WhiteboardComponent {
 
   startStroke(event: PointerEvent, surface: Element): void {
     const tool = this.tool();
-    if (event.button !== 0 || this.busy() || this.pointer !== undefined) return;
+    if (event.button !== 0 || this.busy() || this.pointer !== undefined || this.answer()) return;
     const point = this.point(event, surface);
     if (tool === 'eraser') {
       this.pointer = event.pointerId;
@@ -383,12 +394,17 @@ export class WhiteboardComponent {
       this.eraserStroke.set([point]);
       return;
     }
-    if (tool === 'text') {
-      if (!this.text().trim()) {
-        this.error.set('Enter the text you want to place on the board.');
-        return;
-      }
-      void this.save({ tool: 'text', color: this.color(), points: [point], label: this.text() });
+    if (tool === 'text' || tool === 'equation') {
+      event.preventDefault();
+      const id = (event.target as Element).closest('[data-live-answer]')?.getAttribute('data-live-answer');
+      const mark = id ? this.marks().find(candidate => candidate.id === id) : undefined;
+      if (mark && mark.authorId !== this.userId()) return;
+      const boxWidth = mark?.boxWidth ?? .35;
+      this.answer.set({ id: mark?.id, textRevision: mark?.textRevision ?? 0, boxWidth,
+        point: this.answerPosition(mark?.points[0] ?? point, boxWidth), color: mark?.color ?? this.color(),
+        label: mark?.label ?? '', equation: mark?.equation ?? tool === 'equation',
+        fontSize: mark?.fontSize ?? this.textSize() });
+      requestAnimationFrame(() => this.liveAnswerInput()?.nativeElement.focus());
       return;
     }
     this.pointer = event.pointerId;
@@ -502,6 +518,83 @@ export class WhiteboardComponent {
     await this.write(async () => {
       await this.api.request('POST', this.resource + '/marks', { slideId, ...drawing });
     });
+  }
+
+  editAnswer(label: string): void {
+    this.answer.update(answer => answer && { ...answer, label });
+  }
+
+  stepTextSize(direction: -1 | 1): void {
+    const sizes = direction === 1 ? this.textSizes : [...this.textSizes].reverse();
+    const current = this.currentTextSize();
+    const fontSize = sizes.find(size => direction === 1 ? size > current : size < current);
+    if (fontSize === undefined || this.busy()) return;
+    this.textSize.set(fontSize);
+    this.answer.update(answer => answer && { ...answer, fontSize });
+  }
+
+  async applyAnswer(event: Event): Promise<void> {
+    event.preventDefault();
+    const answer = this.answer();
+    if (!answer?.label.trim() || this.answerDrag) return;
+    if (answer.equation && answer.label.includes('□')) {
+      selectEquationBlank(this.liveAnswerInput()?.nativeElement);
+      return;
+    }
+    const slideId = this.selected().id;
+    await this.write(async () => {
+      const { id, point, label, color, boxWidth, textRevision, equation, fontSize } = answer;
+      if (id) {
+        await this.api.request('PATCH', this.resource + '/marks/' + encodeURIComponent(id) + '/text',
+          { point, label, color, boxWidth, textRevision, equation, fontSize });
+      } else {
+        await this.api.request('POST', this.resource + '/marks',
+          { slideId, tool: 'text', points: [point], label, color, boxWidth, equation, fontSize });
+      }
+      this.answer.set(null);
+    });
+  }
+
+  startAnswerDrag(event: PointerEvent, kind: 'move' | 'resize'): void {
+    const answer = this.answer();
+    if (!answer || this.busy() || this.answerDrag || event.button !== 0) return;
+    event.preventDefault();
+    (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
+    this.answerDrag = { id: event.pointerId, kind, startX: event.clientX, startY: event.clientY, answer };
+  }
+
+  moveAnswerDrag(event: PointerEvent, surface: Element): void {
+    const drag = this.answerDrag;
+    if (!drag || drag.id !== event.pointerId) return;
+    const rect = surface.getBoundingClientRect();
+    this.adjustAnswer(drag.answer, drag.kind, (event.clientX - drag.startX) / rect.width, (event.clientY - drag.startY) / rect.height);
+  }
+
+  endAnswerDrag(event: PointerEvent): void {
+    if (event.pointerId === this.answerDrag?.id) this.answerDrag = undefined;
+  }
+
+  nudgeAnswer(event: KeyboardEvent, kind: 'move' | 'resize'): void {
+    const answer = this.answer();
+    const x = event.key === 'ArrowLeft' ? -.01 : event.key === 'ArrowRight' ? .01 : 0;
+    const y = event.key === 'ArrowUp' ? -.01 : event.key === 'ArrowDown' ? .01 : 0;
+    if (!answer || this.busy() || (!x && (!y || kind === 'resize'))) return;
+    event.preventDefault();
+    this.adjustAnswer(answer, kind, x, y);
+  }
+
+  private adjustAnswer(answer: TextAnswer, kind: 'move' | 'resize', x: number, y: number): void {
+    if (kind === 'resize') {
+      const boxWidth = Math.max(.15, Math.min(.85, 1 - answer.point.x, Math.round((answer.boxWidth + x) * 10000) / 10000));
+      this.answer.update(current => current && { ...current, boxWidth });
+    } else {
+      const point = this.answerPosition({ x: answer.point.x + x, y: answer.point.y + y }, answer.boxWidth);
+      this.answer.update(current => current && { ...current, point });
+    }
+  }
+
+  private answerPosition(point: Point, width: number): Point {
+    return { x: Math.max(0, Math.min(1 - width, point.x)), y: Math.max(0, Math.min(.94, point.y)) };
   }
 
   traceMathLine(points: Point[]): void {
