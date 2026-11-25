@@ -45,9 +45,10 @@ public class AssignmentController {
                        @NotNull @Pattern(regexp="pen|highlighter|line|arrow|rectangle|ellipse|circle|text") String tool,
                        @NotNull @Pattern(regexp="#[0-9a-fA-F]{6}") String color,
                        @NotNull @Size(min=1,max=128) List<@NotNull @Valid Point> points,
-                       @Size(max=240) String text,
+                       @Size(max=1000) String text,
                        @Min(2) @Max(24) Integer width,
-                       @Pattern(regexp="solid|dashed|dotted") String style) {}
+                       @Pattern(regexp="solid|dashed|dotted") String style,
+                       @DecimalMin("0.15") @DecimalMax("0.85") Double boxWidth) {}
     public record WorkspaceInput(@PositiveOrZero long revision,
                                  @NotNull @Size(max=400) List<@NotNull @Valid Mark> marks) {}
 

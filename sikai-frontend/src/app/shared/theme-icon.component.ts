@@ -54,7 +54,10 @@ export class ThemeIconComponent {
     undo: 'M9 8H4m0 0 4-4M4 8l4 4 M9 8h7a5 5 0 0 1 0 10h-4',
     redo: 'M15 8h5m0 0-4-4m4 4-4 4m-1-4H8a5 5 0 0 0 0 10h4',
     scroll: 'M12 3v18 M8 7l4-4 4 4 M8 17l4 4 4-4',
+    move: 'M12 3v18 M3 12h18 M9 6l3-3 3 3 M9 18l3 3 3-3 M6 9l-3 3 3 3 M18 9l3 3-3 3',
     assignment: 'M8 5H5v16h14V5h-3 M8 3h8v4H8z M8 11h8 M8 15h8',
     check: 'M5 12l4 4L19 6',
+    close: 'M6 6l12 12 M18 6L6 18',
+    resize: 'M7 17 17 7 M7 11v6h6 M11 7h6v6',
   };
 }
