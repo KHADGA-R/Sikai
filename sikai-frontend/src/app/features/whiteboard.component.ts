@@ -12,6 +12,7 @@ import { earlyMathTools, MATH_AUDIENCES, MATH_SECTIONS, MATH_WIDGETS, MathAudien
 import { DrawingSettings, DrawingTool, Shape, StrokeStyle, drawingOutline } from './whiteboard-drawing';
 import { AssignmentEquationComponent } from './assignment-equation.component';
 import { EquationKeypadComponent, selectEquationBlank } from './equation-keypad.component';
+import { LiveClassActivitiesComponent } from './live-class-activities.component';
 import type { ClassroomView } from './classroom-video.component';
 
 type Tool = DrawingTool;
@@ -48,7 +49,7 @@ interface Board {
 
 @Component({
   standalone: true,
-  imports: [RouterLink, WhiteboardNoteComponent, ThemeIconComponent, ClassroomVideoComponent, WhiteboardCalculatorComponent, AssignmentEquationComponent, EquationKeypadComponent],
+  imports: [RouterLink, WhiteboardNoteComponent, ThemeIconComponent, ClassroomVideoComponent, WhiteboardCalculatorComponent, AssignmentEquationComponent, EquationKeypadComponent, LiveClassActivitiesComponent],
   templateUrl: './whiteboard.component.html',
   styleUrl: './whiteboard.component.css',
 })

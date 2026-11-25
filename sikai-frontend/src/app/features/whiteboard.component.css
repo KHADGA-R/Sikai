@@ -89,6 +89,12 @@
 .tip-sample { display: inline-block; width: var(--tip-size); height: var(--tip-size); border-radius: 50%; background: currentColor; }
 .undo { margin-inline-start: auto; }
 .surface { position: relative; container-type: inline-size; aspect-ratio: 1000 / 562; background: #fff; border: 1px solid #d5e0da; border-radius: 10px; overflow: hidden; }
+.activity-layout { display: grid; gap: 0; }
+.activity-layout.activities-open { gap: 10px; align-items: start; }
+@container (min-width: 780px) {
+  .activity-layout.activities-open { grid-template-columns: minmax(0, 1fr) minmax(280px, 36%); }
+}
+.workspace { container-type: inline-size; }
 .surface:has(.live-answer-editor) { overflow: visible; }
 .font-size-stepper { align-items: stretch; gap: 0; padding: 0; flex-shrink: 0; }
 .font-size-stepper button { min-width: 32px; min-height: 32px; padding: 0 5px; border: 0; border-radius: 6px; background: transparent; color: inherit; font-weight: 650; }

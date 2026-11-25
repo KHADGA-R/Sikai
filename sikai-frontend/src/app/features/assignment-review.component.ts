@@ -14,7 +14,7 @@ interface Submission {
   fileName: string | null;
 }
 interface Roster {
-  assignment: { title: string; maxPoints: number | null };
+  assignment: { title: string; maxPoints: number | null; activity: boolean };
   submissions: Submission[];
 }
 
@@ -45,7 +45,10 @@ interface Roster {
           <article class="panel submission">
             <div class="summary">
               <div><h3 [id]="'student-review-' + item.studentId" tabindex="-1">{{ item.studentName }}</h3><p>Submitted {{ item.submittedAt | date:'medium' }}</p></div>
-              @if (item.fileName) {
+              @if (data.assignment.activity) {
+                <a class="button outline" [routerLink]="['/courses', courseId, 'assignments', assignmentId, 'submissions', item.studentId, 'activity']"
+                   [queryParams]="returnFilters">View submitted activity</a>
+              } @else if (item.fileName) {
                 <button type="button" class="button outline" [disabled]="busy()" (click)="download(item)">Download submission</button>
               } @else {
                 <a class="button outline" [routerLink]="['/courses', courseId, 'assignments', assignmentId, 'submissions', item.studentId, 'whiteboard']"

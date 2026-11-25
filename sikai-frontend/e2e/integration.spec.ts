@@ -78,6 +78,24 @@ test('instructor publishes an uploaded course; student enrolls, opens its file a
   });
   await page.getByRole('button', { name: 'Publish assignment', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Practice upload' })).toBeVisible();
+  await page.getByRole('link', { name: 'New drag-and-drop activity' }).click();
+  await page.getByLabel('Title', { exact: true }).fill('Word groups');
+  await page.getByLabel('Prompt 1', { exact: true }).fill('Nouns');
+  await page.getByLabel('Prompt 2', { exact: true }).fill('Verbs');
+  await page.getByLabel('Card 1', { exact: true }).fill('Dog');
+  await page.getByLabel('Card 2', { exact: true }).fill('Tree');
+  await page.getByRole('button', { name: 'Preview as student' }).click();
+  const preview = page.locator('.preview');
+  await preview.getByRole('button', { name: 'Dog', exact: true }).click();
+  await preview.getByRole('button', { name: 'Place in Nouns' }).click();
+  await preview.getByRole('button', { name: 'Tree', exact: true }).click();
+  await preview.getByRole('button', { name: 'Place in Nouns' }).click();
+  await expect(preview.locator('.bank').getByRole('button', { name: 'Dog', exact: true })).toBeVisible();
+  await page.getByLabel('Activity format').selectOption('sort');
+  await page.getByLabel('Correct target for card 1').selectOption({ label: 'Nouns' });
+  await page.getByLabel('Correct target for card 2').selectOption({ label: 'Nouns' });
+  await page.getByRole('button', { name: 'Publish activity' }).click();
+  await expect(page.getByRole('heading', { name: 'Word groups', exact: true })).toBeVisible();
 
   const context = await browser.newContext();
   const student = await context.newPage();
@@ -300,6 +318,20 @@ test('instructor publishes an uploaded course; student enrolls, opens its file a
     await expect(student).toHaveURL(/lesson=\d+.*status=pending/);
     await student.getByRole('link', { name: 'View all assignments', exact: true }).click();
     await expect(student.getByRole('heading', { name: 'My Assignments' })).toBeVisible();
+    const activityCard = student.locator('article').filter({ has: student.getByRole('heading', { name: 'Word groups' }) });
+    await activityCard.getByRole('link', { name: 'Open activity' }).click();
+    await student.getByRole('button', { name: 'Dog', exact: true }).press('Enter');
+    await student.getByRole('button', { name: 'Place in Nouns' }).press('Space');
+    const nouns = student.locator('.target').filter({ has: student.getByRole('button', { name: 'Place in Nouns' }) });
+    await student.getByRole('button', { name: 'Tree', exact: true }).dragTo(nouns);
+    await expect(nouns.getByRole('button', { name: 'Dog', exact: true })).toBeVisible();
+    await expect(nouns.getByRole('button', { name: 'Tree', exact: true })).toBeVisible();
+    await expect(student.getByText('Progress saved', { exact: true })).toBeVisible();
+    await student.reload();
+    await expect(nouns.getByRole('button', { name: 'Tree', exact: true })).toBeVisible();
+    await student.getByRole('button', { name: 'Check answers' }).click();
+    await expect(student.getByText('All placed cards are correct.')).toBeVisible();
+    await student.getByRole('link', { name: 'Back to assignments' }).click();
     await expect(student.getByRole('button', { name: 'In review (1)', exact: true })).toBeVisible();
     const uploaded = student.locator('article').filter({ has: student.getByRole('heading', { name: 'Practice upload' }) });
     await uploaded.getByRole('button', { name: 'Upload & submit' }).click();
@@ -399,8 +431,23 @@ test('instructor publishes an uploaded course; student enrolls, opens its file a
 });
 
 test('live teacher availability, student booking, messaging, meeting link and cancellation cross accounts', async ({ page, browser }) => {
-  test.setTimeout(210_000);
+  test.setTimeout(270_000);
   await register(page, 'instructor', 'Live Teacher');
+  const teacherToken = await page.evaluate(() => sessionStorage.getItem('sikai.api-token'));
+  const teacherHeaders = { Authorization: 'Bearer ' + teacherToken };
+  const course = await page.request.post('/api/instructor/courses', { headers: teacherHeaders, data: {
+    title: 'Live music practice', description: 'Sort musical terms.', category: 'Music', subcategory: 'Musical Instruments',
+    price: 0, level: 'BEGINNER', durationHours: 1, emoji: '♪', accent: 'blue', published: true,
+  } });
+  expect(course.ok()).toBeTruthy();
+  const liveCourse = await course.json();
+  const activity = await page.request.post('/api/courses/' + liveCourse.id + '/assignments/activities', { headers: teacherHeaders, data: {
+    assignment: { title: 'Sort instruments', instructions: 'Place each instrument.', kind: 'classwork', maxPoints: 10 },
+    activity: { mode: 'sort', targets: [{ id: 1, label: 'Drums' }, { id: 2, label: 'Strings' }],
+      cards: [{ id: 1, label: 'Madal', targetId: 1 }, { id: 2, label: 'Guitar', targetId: 2 }] },
+  } });
+  expect(activity.ok()).toBeTruthy();
+  const activityId = (await activity.json()).id;
   await page.goto('/instructor/about');
   await page.getByRole('combobox', { name: 'Teaching subject', exact: true }).selectOption('Music');
   await page.getByLabel('Introduction', { exact: true }).fill('Learn madal and Nepali rhythms.');
@@ -451,6 +498,74 @@ test('live teacher availability, student booking, messaging, meeting link and ca
     await page.locator('.booking-card').getByRole('link', { name: 'Open whiteboard' }).click();
     await booking.getByRole('link', { name: 'Open whiteboard' }).click();
     await expect(student.getByRole('heading', { name: 'Class whiteboard' })).toBeVisible();
+    await page.getByRole('button', { name: 'Activities', exact: true }).click();
+    await page.getByLabel('Choose activity').selectOption(activityId);
+    await page.getByRole('button', { name: 'Preview activity', exact: true }).click();
+    await expect(page.getByRole('heading', { name: 'Preview', exact: true })).toBeVisible();
+    const duration = page.getByRole('spinbutton', { name: 'Time limit (minutes)' });
+    await duration.fill('0');
+    await expect(page.getByRole('button', { name: 'Launch for class' })).toBeDisabled();
+    await duration.fill('5');
+    await page.getByRole('button', { name: 'Launch for class' }).click();
+    const studentActivity = student.getByRole('complementary', { name: 'Class activities' });
+    await expect(page.getByRole('timer', { name: 'Time remaining' })).toContainText(/(?:4:\d{2}|5:00)/);
+    await expect(studentActivity.getByRole('timer', { name: 'Time remaining' })).toContainText(/4:\d{2}|5:00/);
+    await studentActivity.getByRole('button', { name: 'Madal', exact: true }).click();
+    await studentActivity.getByRole('button', { name: 'Place in Drums' }).click();
+    await expect(studentActivity.getByText('Progress saved', { exact: true })).toBeVisible();
+    await student.reload();
+    await expect(studentActivity.locator('.target').filter({ hasText: 'Drums' }).getByRole('button', { name: 'Madal', exact: true })).toBeVisible();
+    await expect(page.getByText('Working', { exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'View work' }).click();
+    await expect(page.getByRole('heading', { name: /’s work/ })).toBeVisible();
+    await studentActivity.getByRole('button', { name: 'Guitar', exact: true }).click();
+    await studentActivity.getByRole('button', { name: 'Place in Strings' }).click();
+    await student.once('dialog', dialog => dialog.accept()).getByRole('button', { name: 'Submit activity' }).click();
+    await expect(page.getByText('Finished', { exact: true })).toBeVisible();
+    const submissionPath = '/api/courses/' + liveCourse.id + '/assignments/' + activityId + '/submissions';
+    const roster = await page.request.get(submissionPath, { headers: teacherHeaders });
+    expect(roster.ok()).toBeTruthy();
+    const [studentWork] = (await roster.json()).submissions;
+    const snapshot = await page.request.get(submissionPath + '/' + studentWork.studentId + '/activity', { headers: teacherHeaders });
+    expect(snapshot.ok()).toBeTruthy();
+    expect((await snapshot.json()).placements).toHaveLength(2);
+    const review = await page.request.put(submissionPath + '/' + studentWork.studentId + '/review', {
+      headers: teacherHeaders, data: { score: 10, feedback: 'Both instruments are in the right group.' },
+    });
+    expect(review.ok()).toBeTruthy();
+    await expect(studentActivity.getByText('Grade 10 / 10', { exact: true })).toBeVisible();
+    await duration.fill('2');
+    await page.once('dialog', dialog => dialog.accept()).getByRole('button', { name: 'Run again', exact: true }).click();
+    await expect(studentActivity.getByText('Round 2', { exact: true })).toBeVisible();
+    await expect(studentActivity.getByRole('timer', { name: 'Time remaining' })).toContainText(/1:\d{2}|2:00/);
+    await expect(studentActivity.getByText('Your earlier graded submission is saved.', { exact: false })).toBeVisible();
+    const bank = studentActivity.locator('.bank');
+    await bank.getByRole('button', { name: 'Madal', exact: true }).click();
+    await studentActivity.getByRole('button', { name: 'Place in Strings' }).click();
+    await bank.getByRole('button', { name: 'Guitar', exact: true }).click();
+    await studentActivity.getByRole('button', { name: 'Place in Drums' }).click();
+    await studentActivity.getByRole('button', { name: 'Finish activity' }).click();
+    await expect(studentActivity.getByText('Activity finished', { exact: true })).toBeVisible();
+    await expect(page.getByText(/Needs review.*0 of 2 correct/)).toBeVisible();
+    await page.getByRole('checkbox', { name: 'Show private ranking' }).check();
+    await expect(page.locator('.progress-row').getByText('#1', { exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'View work', exact: true }).click();
+    await expect(page.getByText(/Madal.*Placed in Strings.*Expected Drums/)).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Madal, incorrect placement' })).toBeVisible();
+    await expect(studentActivity.getByRole('checkbox', { name: 'Show private ranking' })).toHaveCount(0);
+    await expect(studentActivity.getByRole('region', { name: 'Class summary' })).toHaveCount(0);
+    const original = await page.request.get(submissionPath + '/' + studentWork.studentId + '/activity', { headers: teacherHeaders });
+    expect((await original.json()).placements).toEqual([{ cardId: 1, targetId: 1 }, { cardId: 2, targetId: 2 }]);
+    await page.getByRole('button', { name: 'Close and reveal answers' }).click();
+    await expect(studentActivity.getByRole('heading', { name: 'Correct placements' })).toBeVisible();
+    await page.getByRole('button', { name: 'Share class summary' }).click();
+    const sharedSummary = studentActivity.getByRole('region', { name: 'Class summary' });
+    await expect(sharedSummary.getByText('0 of 1 submissions had every card correct.')).toBeVisible();
+    await expect(sharedSummary.getByText('Drums · 1 missed placement')).toBeVisible();
+    await page.getByRole('button', { name: 'Hide class summary' }).click();
+    await expect(sharedSummary).toHaveCount(0);
+    await student.getByRole('button', { name: 'Hide class activities' }).click();
+    await page.getByRole('button', { name: 'Hide class activities' }).click();
     await expect(student.getByRole('link', { name: 'Open video call' })).toHaveAttribute('href', 'https://meet.example.com/sikai-e2e');
     await student.getByRole('button', { name: 'Calculator', exact: true }).click();
     const calculator = student.locator('app-whiteboard-calculator');

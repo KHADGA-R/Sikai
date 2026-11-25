@@ -117,8 +117,9 @@ public class AssignmentController {
         var assignments = db.list("""
             SELECT a.id,a.kind,a.title,a.instructions,a.due_at AS "dueAt",a.published_at AS "publishedAt",
                    a.lesson_id AS "lessonId",l.title AS "lessonTitle",f.file_name AS "fileName",a.max_points AS "maxPoints",
+                   (a.activity_definition IS NOT NULL) AS "activity",
                    CASE WHEN ? THEN (SELECT COUNT(*) FROM assignment_submission s WHERE s.assignment_id=a.id) ELSE 0 END AS "submissionCount"
-            FROM course_assignment a JOIN course_asset f ON f.id=a.asset_id
+            FROM course_assignment a LEFT JOIN course_asset f ON f.id=a.asset_id
             LEFT JOIN lesson l ON l.id=a.lesson_id
             WHERE a.course_id=? ORDER BY a.published_at DESC,a.id
             """, canPublish, courseId);

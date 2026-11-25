@@ -36,6 +36,7 @@
       <div class="whiteboard-panel-heading">
         <h2>Whiteboard</h2>
         <div class="board-panel-actions">
+          <button type="button" class="slides-toggle" [attr.aria-expanded]="activities.open()" (click)="activities.toggle()">Activities</button>
           <button type="button" class="slides-toggle calculator-toggle" [attr.aria-expanded]="calculatorOpen()"
             (click)="calculatorMode.set('standard'); calculatorOpen.set(!calculatorOpen())">
             <app-theme-icon name="calculator" /> Calculator
@@ -247,6 +248,7 @@
         @if (activeShape() === 'circle') {
           <p class="tool-note">Drag from the center to the edge to draw a circle.</p>
         }
+        <div class="activity-layout" [class.activities-open]="activities.open()">
         <div class="surface">
           @if (image(); as background) { <img [src]="background" [alt]="selected().title" /> }
           <svg #surface viewBox="0 0 1000 562" preserveAspectRatio="none" [class.erasing]="tool() === 'eraser'"
@@ -342,6 +344,8 @@
               [preview]="flowPreviews()[note.id] ?? null" (previewChanged)="setFlowPreview(note.id, $event)"
               (changed)="changeNote(note.id, $event)" (removed)="deleteNote(note.id)" />
           }
+        </div>
+        <app-live-class-activities #activities [slotId]="slotId" [teacher]="room.instructor" />
         </div>
         <p class="board-note">Marks are shared with the class. Use Show marks to isolate a participant’s annotations.</p>
       </div>

@@ -18,6 +18,7 @@ interface Assignment {
   fileName: string;
   maxPoints: number | null;
   submissionCount: number;
+  activity: boolean;
 }
 interface AssignmentsPage {
   courseTitle: string;
@@ -39,6 +40,8 @@ interface AssignmentsPage {
           <a [routerLink]="['/courses', courseId(), 'assignments']" aria-current="page">Assignments</a>
         </nav>
         @if (course.canPublish) {
+          <a class="button outline new-activity" [routerLink]="['/courses', courseId(), 'assignments', 'new-activity']"
+             [queryParams]="{lesson: lessonFilter() || null, kind: kindFilter() || null}">New drag-and-drop activity</a>
           <details class="panel assignment-form">
             <summary class="button primary">New assignment</summary>
             <form #publishForm="ngForm" (ngSubmit)="publish(worksheet, publishForm)">
@@ -89,9 +92,18 @@ interface AssignmentsPage {
             <div class="assignment-facts">
               <p>{{ assignment.dueAt == null ? 'No deadline' : 'Due ' + (assignment.dueAt | date:'medium') }}</p>
               <p>{{ assignment.maxPoints == null ? 'Ungraded' : assignment.maxPoints + ' points' }}</p>
-              @if (course.canPublish) { <p>{{ assignment.submissionCount }} {{ assignment.submissionCount === 1 ? 'submission' : 'submissions' }}</p> }
+              @if (assignment.activity && assignment.maxPoints == null) { <p>Drag-and-drop practice</p> }
+              @else if (course.canPublish) { <p>{{ assignment.submissionCount }} {{ assignment.submissionCount === 1 ? 'submission' : 'submissions' }}</p> }
             </div>
             <div class="assignment-actions">
+            @if (assignment.activity) {
+              <a class="button outline" [routerLink]="['/courses', courseId(), 'assignments', assignment.id, 'activity']"
+                 [queryParams]="{kind: kindFilter() || null, lesson: lessonFilter() || null}">Open activity</a>
+              @if (course.canPublish && assignment.maxPoints != null) {
+                <a class="button primary" [routerLink]="['/courses', courseId(), 'assignments', assignment.id, 'submissions']"
+                   [queryParams]="{kind: kindFilter() || null, lesson: lessonFilter() || null}">View submissions</a>
+              }
+            } @else {
             @if (course.canPublish) {
               <a class="button primary" [routerLink]="['/courses', courseId(), 'assignments', assignment.id, 'submissions']"
                  [queryParams]="{kind: kindFilter() || null, lesson: lessonFilter() || null}">View submissions</a>
@@ -99,6 +111,7 @@ interface AssignmentsPage {
             <button type="button" class="button outline" [title]="assignment.fileName" [disabled]="!!downloading()" (click)="download(assignment)">
               {{ downloading() === assignment.id ? 'Downloading…' : 'Download worksheet' }}
             </button>
+            }
             </div>
           </article>
         } @empty { <p>{{ course.assignments.length ? 'No assignments match these filters.' : 'No assignments yet. Use New assignment to publish homework or classwork.' }}</p> }
@@ -110,6 +123,7 @@ interface AssignmentsPage {
   `,
   styles: [`
     .assignments-page { max-width: 1050px; }
+    .new-activity { margin-bottom: 10px; }
     header { margin: 12px 0 18px; } h1, h2, p { margin: 0 0 7px; } h2 { font-size: 1.15rem; }
     .assignment-form, .assignment-card { margin-bottom: 12px; padding: 14px; }
     .assignment-card { display: grid; grid-template-columns: minmax(0, 2fr) minmax(130px, 1fr) auto; gap: 14px; align-items: start; }

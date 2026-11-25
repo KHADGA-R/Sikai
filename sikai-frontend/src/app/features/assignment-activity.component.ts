@@ -1,0 +1,211 @@
+import { Component, inject, signal } from '@angular/core';
+import { FormsModule } from '@angular/forms';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import { ApiService } from '../core/api.service';
+import { AuthService } from '../core/auth.service';
+import { Activity, ActivityTile, AssignmentActivityPlayerComponent, Placement } from './assignment-activity-player.component';
+
+interface AnswerCard extends ActivityTile { targetId: number | null; }
+interface PublishedActivity extends Activity { title: string; instructions: string; placements?: Placement[]; }
+
+@Component({
+  standalone: true,
+  imports: [FormsModule, RouterLink, AssignmentActivityPlayerComponent],
+  template: `
+    <section class="container section activity-page">
+      <a [routerLink]="backLink" [queryParams]="backFilters">Back to assignments</a>
+      @if (building) {
+        <h1>New drag-and-drop activity</h1>
+        <form class="panel builder" (ngSubmit)="publish()">
+          <fieldset [disabled]="saving()">
+            <label>Title <input [(ngModel)]="title" name="title" maxlength="160" required /></label>
+            <label>Instructions <textarea [(ngModel)]="instructions" name="instructions" maxlength="4000" rows="2"></textarea></label>
+            <div class="fields">
+              <label>Activity format <select [(ngModel)]="mode" name="mode">
+                <option value="match">Match</option><option value="sort">Sort</option>
+              </select></label>
+              <label>Assignment type <select [(ngModel)]="kind" name="kind">
+                <option value="classwork">Classwork</option><option value="homework">Homework</option>
+              </select></label>
+              <label>Lesson <select [(ngModel)]="lessonId" name="lesson">
+                <option [ngValue]="null">Course-wide</option>
+                @for (lesson of lessons(); track lesson.id) { <option [ngValue]="lesson.id">{{ lesson.label }}</option> }
+              </select></label>
+              <label>Due date <input type="datetime-local" [(ngModel)]="due" name="due" /></label>
+              <label>Maximum points <input type="number" name="points" min="1" max="10000" step="1" [(ngModel)]="maxPoints" />
+                <small>Leave blank for practice with answer checking.</small>
+              </label>
+            </div>
+            <h2>{{ mode === 'match' ? 'Matching prompts' : 'Sorting groups' }}</h2>
+            @for (target of targets; track target.id; let i = $index) {
+              <div class="builder-row">
+                <label>{{ mode === 'match' ? 'Prompt' : 'Group' }} {{ i + 1 }}
+                  <input [name]="'target' + target.id" [(ngModel)]="target.label" maxlength="100" required /></label>
+                <button type="button" class="button outline" [disabled]="targets.length <= 2"
+                        [attr.aria-label]="'Remove target ' + (i + 1)" (click)="removeTarget(target.id)">Remove</button>
+              </div>
+            }
+            <button type="button" class="button outline" [disabled]="targets.length >= 12" (click)="addTarget()">Add target</button>
+            <h2>Answer cards</h2>
+            @for (card of cards; track card.id; let i = $index) {
+              <div class="builder-row card-row">
+                <label>Card {{ i + 1 }} <input [name]="'card' + card.id" [(ngModel)]="card.label" maxlength="80" required /></label>
+                <label>Correct target for card {{ i + 1 }}
+                  <select [name]="'key' + card.id" [(ngModel)]="card.targetId" required>
+                    <option [ngValue]="null">Choose target</option>
+                    @for (target of targets; track target.id; let j = $index) {
+                      <option [ngValue]="target.id">{{ target.label.trim() || 'Target ' + (j + 1) }}</option>
+                    }
+                  </select>
+                </label>
+                <button type="button" class="button outline" [disabled]="cards.length <= 2"
+                        [attr.aria-label]="'Remove card ' + (i + 1)" (click)="removeCard(card.id)">Remove</button>
+              </div>
+            }
+            <button type="button" class="button outline" [disabled]="cards.length >= 30" (click)="addCard()">Add card</button>
+            <div class="actions">
+              <button type="button" class="button outline" (click)="previewActivity()">Preview as student</button>
+              <button type="submit" class="button primary">{{ saving() ? 'Publishing…' : 'Publish activity' }}</button>
+            </div>
+          </fieldset>
+        </form>
+        @if (preview(); as activity) {
+          <section class="preview">
+            <div class="actions"><h2>Student preview</h2><button type="button" class="button outline" (click)="preview.set(null)">Close preview</button></div>
+            @if (instructions.trim()) { <p class="instructions">{{ instructions }}</p> }
+            <app-assignment-activity-player [activity]="activity" />
+          </section>
+        }
+      } @else if (published(); as activity) {
+        <h1>{{ activity.title }}</h1>
+        @if (activity.instructions) { <p class="instructions">{{ activity.instructions }}</p> }
+        <app-assignment-activity-player [activity]="activity" [resource]="attemptResource()"
+          [readonlyMode]="!!submissionId" [display]="activity.placements ?? null" />
+      } @else if (!error()) {
+        <p role="status">Loading activity…</p>
+      }
+      @if (error()) { <p class="error-note" role="alert">{{ error() }}</p> }
+    </section>
+  `,
+  styles: [`
+    .activity-page { max-width: 900px; }
+    .builder { padding: 14px; }
+    fieldset { padding: 0; margin: 0; border: 0; min-width: 0; display: grid; gap: 9px; }
+    label { display: grid; gap: 3px; margin: 0; min-width: 0; }
+    .fields, .builder-row { display: grid; gap: 8px; align-items: end; }
+    .fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .builder-row { grid-template-columns: minmax(0, 1fr) auto; }
+    .card-row { grid-template-columns: repeat(2, minmax(0, 1fr)) auto; }
+    .actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+    .preview { margin-top: 16px; }
+    .instructions { white-space: pre-wrap; overflow-wrap: anywhere; }
+    fieldset > button { justify-self: start; }
+    h2 { font-size: 1.1rem; margin: 8px 0 0; }
+    @media (max-width: 540px) { .fields, .builder-row, .card-row { grid-template-columns: 1fr; } }
+  `],
+})
+export class AssignmentActivityComponent {
+  private readonly api = inject(ApiService);
+  private readonly auth = inject(AuthService);
+  private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
+  private readonly courseId = this.route.snapshot.paramMap.get('id');
+  private readonly assignmentId = this.route.snapshot.paramMap.get('assignmentId');
+  readonly submissionId = this.route.snapshot.paramMap.get('studentId');
+  private readonly path = '/courses/' + this.courseId + '/assignments';
+  readonly attemptResource = () => this.auth.user()?.role === 'student' && !this.submissionId
+    ? this.path + '/' + this.assignmentId + '/activity/attempt' : '';
+  private readonly query = this.route.snapshot.queryParamMap;
+  readonly building = this.assignmentId === null;
+  readonly backLink = this.submissionId && this.submissionId !== 'me'
+    ? ['/courses', this.courseId, 'assignments', this.assignmentId, 'submissions']
+    : this.query.get('from') === 'dashboard' ? ['/my-assignments'] : ['/courses', this.courseId, 'assignments'];
+  readonly backFilters = {
+    course: this.query.get('course'), lesson: this.query.get('lesson'), kind: this.query.get('kind'),
+    status: this.query.get('status'), sort: this.query.get('sort'),
+  };
+  readonly published = signal<PublishedActivity | null>(null);
+  readonly preview = signal<Activity | null>(null);
+  readonly lessons = signal<ActivityTile[]>([]);
+  readonly saving = signal(false);
+  readonly error = signal('');
+  title = '';
+  instructions = '';
+  mode: Activity['mode'] = 'match';
+  kind = 'classwork';
+  lessonId: number | null = null;
+  due = '';
+  maxPoints: number | null = null;
+  targets: ActivityTile[] = [{ id: 1, label: '' }, { id: 2, label: '' }];
+  cards: AnswerCard[] = [{ id: 1, label: '', targetId: null }, { id: 2, label: '', targetId: null }];
+  private nextTarget = 3;
+  private nextCard = 3;
+
+  constructor() { void this.load(); }
+
+  private async load(): Promise<void> {
+    try {
+      if (this.building) {
+        const result = await this.api.request<{ lessons: { id: number; title: string }[] }>('GET', this.path);
+        this.lessons.set(result.lessons.map(lesson => ({ id: lesson.id, label: lesson.title })));
+        const lesson = Number(this.query.get('lesson'));
+        if (this.lessons().some(item => item.id === lesson)) this.lessonId = lesson;
+      } else {
+        const submission = this.submissionId ? '/submissions/' + encodeURIComponent(this.submissionId) : '';
+        this.published.set(await this.api.request<PublishedActivity>('GET', this.path + '/' + this.assignmentId + submission + '/activity'));
+      }
+    } catch (error) { this.showError(error); }
+  }
+
+  addTarget(): void { this.targets.push({ id: this.nextTarget++, label: '' }); }
+  removeTarget(id: number): void {
+    this.targets = this.targets.filter(target => target.id !== id);
+    for (const card of this.cards) if (card.targetId === id) card.targetId = null;
+  }
+  addCard(): void { this.cards.push({ id: this.nextCard++, label: '', targetId: null }); }
+  removeCard(id: number): void { this.cards = this.cards.filter(card => card.id !== id); }
+
+  previewActivity(): void {
+    this.error.set('');
+    if (!this.labelsReady()) return;
+    this.preview.set({
+      mode: this.mode, targets: this.targets.map(target => ({ ...target, label: target.label.trim() })),
+      cards: this.cards.map(card => ({ id: card.id, label: card.label.trim() })),
+    });
+  }
+
+  async publish(): Promise<void> {
+    if (this.saving()) return;
+    this.error.set('');
+    if (!this.labelsReady()) return;
+    const assigned = new Set(this.cards.map(card => card.targetId));
+    if (assigned.has(null) || (this.mode === 'match' && (assigned.size !== this.cards.length || assigned.size !== this.targets.length))) {
+      this.error.set(this.mode === 'match' ? 'Give each matching prompt exactly one correct card.' : 'Choose a correct group for each card.');
+      return;
+    }
+    const dueAt = this.due ? new Date(this.due).getTime() : null;
+    if (dueAt !== null && !Number.isFinite(dueAt)) {
+      this.error.set('Enter a valid due date.');
+      return;
+    }
+    this.saving.set(true);
+    try {
+      await this.api.request('POST', this.path + '/activities', {
+        assignment: { title: this.title, instructions: this.instructions, kind: this.kind, lessonId: this.lessonId, dueAt, maxPoints: this.maxPoints },
+        activity: { mode: this.mode, targets: this.targets, cards: this.cards },
+      });
+      await this.router.navigate(this.backLink);
+    } catch (error) { this.showError(error); }
+    finally { this.saving.set(false); }
+  }
+
+  private labelsReady(): boolean {
+    const ready = [...this.targets, ...this.cards].every(tile => tile.label.trim());
+    if (!ready) this.error.set('Add a label to every target and card.');
+    return ready;
+  }
+
+  private showError(error: unknown): void {
+    this.error.set(error instanceof Error ? error.message : 'Unable to load or publish the activity.');
+  }
+}

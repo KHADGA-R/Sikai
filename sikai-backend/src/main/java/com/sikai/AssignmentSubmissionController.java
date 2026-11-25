@@ -39,10 +39,11 @@ public class AssignmentSubmissionController {
             SELECT a.id,a.kind,a.title,a.instructions,a.course_id AS "courseId",c.title AS "courseTitle",
                    a.due_at AS "dueAt",a.published_at AS "publishedAt",a.max_points AS "maxPoints",
                    a.lesson_id AS "lessonId",l.title AS "lessonTitle",f.file_name AS "fileName",
+                   (a.activity_definition IS NOT NULL) AS "activity",
                    (w.assignment_id IS NOT NULL) AS "hasDraft",s.submitted_at AS "submittedAt",
                    s.score,s.feedback,sf.file_name AS "submissionFileName"
             FROM enrollment e JOIN course c ON c.id=e.course_id JOIN course_assignment a ON a.course_id=c.id
-            JOIN course_asset f ON f.id=a.asset_id LEFT JOIN lesson l ON l.id=a.lesson_id
+            LEFT JOIN course_asset f ON f.id=a.asset_id LEFT JOIN lesson l ON l.id=a.lesson_id
             LEFT JOIN assignment_workspace w ON w.assignment_id=a.id AND w.student_id=e.user_id
             LEFT JOIN assignment_submission s ON s.assignment_id=a.id AND s.student_id=e.user_id
             LEFT JOIN course_asset sf ON sf.id=s.asset_id
@@ -107,6 +108,20 @@ public class AssignmentSubmissionController {
             (String) submission.get("content_type"));
     }
 
+    @GetMapping(SUBMISSIONS + "/{studentId}/activity")
+    public Object submittedActivity(@PathVariable long courseId, @PathVariable String id, @PathVariable String studentId,
+                                    @AuthenticationPrincipal AuthService.User user) throws Exception {
+        var submission = submission(courseId, id, studentId, user);
+        var assignment = db.one("""
+            SELECT title,instructions,activity_definition,max_points FROM course_assignment
+            WHERE course_id=? AND id=? AND activity_definition IS NOT NULL
+            """, courseId, id);
+        var definition = json.readValue((String) assignment.get("activity_definition"), AssignmentActivityController.Definition.class);
+        var result = new java.util.HashMap<>(AssignmentActivityController.playable(assignment, definition));
+        result.put("placements", json.readTree((String) submission.get("annotations")));
+        return result;
+    }
+
     @PutMapping(SUBMISSIONS + "/{studentId}/review")
     @Transactional
     public Object review(@PathVariable long courseId, @PathVariable String id, @PathVariable String studentId,
@@ -122,12 +137,15 @@ public class AssignmentSubmissionController {
     }
 
     private Map<String,Object> assignment(long courseId, String id) {
-        return db.one("SELECT title,instructions,max_points AS \"maxPoints\" FROM course_assignment WHERE course_id=? AND id=?", courseId, id);
+        return db.one("""
+            SELECT title,instructions,max_points AS "maxPoints",(activity_definition IS NOT NULL) AS "activity"
+            FROM course_assignment WHERE course_id=? AND id=?
+            """, courseId, id);
     }
 
     private void startSubmission(long courseId, String id, AuthService.User user) {
         assignments.requireStudent(courseId, user);
-        db.one("SELECT id FROM course_assignment WHERE course_id=? AND id=? FOR UPDATE", courseId, id);
+        db.one("SELECT id FROM course_assignment WHERE course_id=? AND id=? AND asset_id IS NOT NULL FOR UPDATE", courseId, id);
         Db.require(!db.exists("SELECT assignment_id FROM assignment_submission WHERE assignment_id=? AND student_id=?", id, user.id()),
             CONFLICT, "You have already submitted this assignment");
     }

@@ -214,7 +214,7 @@ public class WhiteboardService {
             NOT_FOUND, "Your sticky note was not found");
     }
 
-    private Map<String,Object> access(String slotId, AuthService.User user) {
+    Map<String,Object> access(String slotId, AuthService.User user) {
         var slot = db.one("""
             SELECT s.board_revision,s.closed,s.meeting_url,s.start_at,s.end_at,s.sikai_video,s.maths_audience,s.maths_show_all,t.owner_id,t.subject FROM live_slot s
             JOIN teacher t ON t.id=s.teacher_id WHERE s.id=?

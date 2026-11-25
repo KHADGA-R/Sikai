@@ -14,6 +14,7 @@ interface Assignment {
   courseId: number;
   courseTitle: string;
   lessonId: number | null;
+  activity: boolean;
   lessonTitle: string | null;
   fileName: string;
   dueAt: number | null;
@@ -87,7 +88,9 @@ interface CourseContext {
                 <p class="muted">{{ item.kind === 'classwork' ? 'Classwork' : 'Homework' }} · {{ item.courseTitle }}@if (item.lessonTitle) { · {{ item.lessonTitle }} }</p>
                 <h2>{{ item.title }}</h2>
                 @if (item.instructions) { <p class="instructions">{{ item.instructions }}</p> }
-                <button class="text-button" [title]="item.fileName" [disabled]="busy()" (click)="download(item)">Download worksheet</button>
+                @if (!item.activity) {
+                  <button class="text-button" [title]="item.fileName" [disabled]="busy()" (click)="download(item)">Download worksheet</button>
+                }
               </div>
             </div>
             <div class="fact"><span>Due date</span>
@@ -97,7 +100,8 @@ interface CourseContext {
               }
             </div>
             <div class="fact"><span>Status</span>
-              <strong class="badge" [class]="state.id"><app-theme-icon [name]="state.icon" />{{ state.label }}</strong>
+              @if (item.activity && item.maxPoints == null) { <strong>Practice activity</strong> }
+              @else { <strong class="badge" [class]="state.id"><app-theme-icon [name]="state.icon" />{{ state.label }}</strong> }
               @if (item.submittedAt != null) { <small>Submitted {{ item.submittedAt | date:'medium' }}</small> }
             </div>
             <div class="fact"><span>Grading</span>
@@ -105,11 +109,17 @@ interface CourseContext {
               @if (item.score != null && item.maxPoints) { <small>{{ item.score / item.maxPoints | percent }}</small> }
             </div>
             <div class="actions">
-              @if (state.id === 'pending') {
+              @if (item.activity && state.id === 'pending') {
+                <a class="button primary" [routerLink]="['/courses', item.courseId, 'assignments', item.id, 'activity']"
+                   [queryParams]="returnQuery()">Open activity</a>
+              } @else if (state.id === 'pending') {
                 <a class="button primary" [routerLink]="['/courses', item.courseId, 'assignments', item.id, 'whiteboard']" [queryParams]="returnQuery()">{{ item.hasDraft ? 'Resume whiteboard' : 'Open in whiteboard' }}</a>
                 <button class="button outline" [disabled]="busy()" (click)="toggleUpload(item.id)">Upload &amp; submit</button>
               } @else {
-                @if (item.submissionFileName) {
+                @if (item.activity) {
+                  <a class="button outline" [routerLink]="['/courses', item.courseId, 'assignments', item.id, 'submissions', 'me', 'activity']"
+                     [queryParams]="returnQuery()">View submission</a>
+                } @else if (item.submissionFileName) {
                   <button class="button outline" [disabled]="busy()" (click)="download(item, true)">Download submission</button>
                 } @else {
                   <a class="button outline" [routerLink]="['/courses', item.courseId, 'assignments', item.id, 'submissions', 'me', 'whiteboard']" [queryParams]="returnQuery()">View submission</a>
@@ -217,10 +227,11 @@ export class MyAssignmentsComponent {
     (!this.lesson() || String(item.lessonId) === this.lesson())));
   readonly counts = computed(() => {
     const counts = { pending: 0, review: 0, completed: 0, graded: 0 };
-    for (const item of this.inCourse()) counts[this.stateFor(item).id]++;
+    for (const item of this.inCourse()) if (!item.activity || item.maxPoints != null) counts[this.stateFor(item).id]++;
     return counts;
   });
-  readonly visible = computed(() => this.inCourse().filter(item => this.filter() === 'all' || this.stateFor(item).id === this.filter())
+  readonly visible = computed(() => this.inCourse().filter(item => this.filter() === 'all' ||
+    (!item.activity || item.maxPoints != null) && this.stateFor(item).id === this.filter())
     .sort((a, b) => {
       if (this.sort() === 'recent') return b.publishedAt - a.publishedAt;
       const priority = (item: Assignment) => item.submittedAt != null ? 2 : item.dueAt != null && item.dueAt < this.now ? 0 : 1;

@@ -1,0 +1,1 @@
+ALTER TABLE live_activity_run ADD COLUMN summary_shared BOOLEAN NOT NULL DEFAULT FALSE;
