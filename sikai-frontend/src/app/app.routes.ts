@@ -1,4 +1,4 @@
-import { adminGuard, authGuard, instructorGuard } from './core/auth.guard';
+import { adminGuard, authGuard, instructorGuard, studentAssignmentsView } from './core/auth.guard';
 import { Routes } from '@angular/router';
 
 const siteInformation = () => import('./features/site-information.component').then(m => m.SiteInformationComponent);
@@ -28,10 +28,15 @@ export const routes: Routes = [
   { path: 'login', loadComponent: () => import('./features/auth.component').then(m => m.AuthComponent), title: 'Log in | Sikai' },
   { path: 'register', loadComponent: () => import('./features/auth.component').then(m => m.AuthComponent), title: 'Create account | Sikai' },
   { path: '', loadComponent: () => import('./features/catalog.component').then(m => m.CatalogComponent), title: 'Explore courses | Sikai' },
-  { path: 'courses/:id/assignments', canActivate: [authGuard], loadComponent: () => import('./features/course-assignments.component').then(m => m.CourseAssignmentsComponent), title: 'Course assignments | Sikai' },
+  { path: 'courses/:id/assignments', canMatch: [studentAssignmentsView], canActivate: [authGuard], loadComponent: () => import('./features/my-assignments.component').then(m => m.MyAssignmentsComponent), title: 'Course assignments | Sikai' },
+  { path: 'courses/:id/assignments', canActivate: [instructorGuard], loadComponent: () => import('./features/course-assignments.component').then(m => m.CourseAssignmentsComponent), title: 'Manage course assignments | Sikai' },
+  { path: 'courses/:id/assignments/:assignmentId/whiteboard', canActivate: [authGuard], canDeactivate: [(board: import('./features/assignment-whiteboard.component').AssignmentWhiteboardComponent) => board.canLeave()], loadComponent: () => import('./features/assignment-whiteboard.component').then(m => m.AssignmentWhiteboardComponent), title: 'Assignment whiteboard | Sikai' },
+  { path: 'courses/:id/assignments/:assignmentId/submissions/:studentId/whiteboard', canActivate: [authGuard], loadComponent: () => import('./features/assignment-whiteboard.component').then(m => m.AssignmentWhiteboardComponent), title: 'Submitted whiteboard | Sikai' },
+  { path: 'courses/:id/assignments/:assignmentId/submissions', canActivate: [instructorGuard], loadComponent: () => import('./features/assignment-review.component').then(m => m.AssignmentReviewComponent), title: 'Assignment submissions | Sikai' },
   { path: 'courses/:id', loadComponent: () => import('./features/course-detail.component').then(m => m.CourseDetailComponent), title: 'Course details | Sikai' },
   { path: 'wishlist', canActivate: [authGuard], loadComponent: () => import('./features/wishlist.component').then(m => m.WishlistComponent), title: 'Wishlist | Sikai' },
   { path: 'my-learning', canActivate: [authGuard], loadComponent: () => import('./features/my-learning.component').then(m => m.MyLearningComponent), title: 'My learning | Sikai' },
+  { path: 'my-assignments', canActivate: [authGuard], loadComponent: () => import('./features/my-assignments.component').then(m => m.MyAssignmentsComponent), title: 'My Assignments | Sikai' },
   { path: 'learn/:id', canActivate: [authGuard], loadComponent: () => import('./features/player.component').then(m => m.PlayerComponent), title: 'Course player | Sikai' },
   { path: 'instructor/courses', canActivate: [instructorGuard], canDeactivate: [(component: { canLeave(): boolean }) => component.canLeave()], loadComponent: () => import('./features/instructor.component').then(m => m.InstructorComponent), title: 'My Courses | Sikai' },
   { path: 'instructor/about', canActivate: [instructorGuard], data: {view: 'profile'}, loadComponent: () => import('./features/live-classes.component').then(m => m.LiveClassesComponent), title: 'About me | Sikai' },

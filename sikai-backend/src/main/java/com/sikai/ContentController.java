@@ -178,6 +178,10 @@ public class ContentController {
 
     Map<String,Object> stage(MultipartFile file,AuthService.User user) throws Exception {
         catalog.instructor(user);
+        return stageFile(file,user);
+    }
+
+    Map<String,Object> stageFile(MultipartFile file,AuthService.User user) throws Exception {
         String type=Objects.toString(file.getContentType(),"");
         boolean image=Set.of("image/png","image/jpeg").contains(type);
         Db.require(!file.isEmpty() && file.getSize()<=(image?5:100)*1024L*1024

@@ -6,6 +6,26 @@ if (process.env.LIVEKIT_URL) {
 
 const password = 'IntegrationPass123!';
 
+function practicePdf(): Buffer {
+  const objects = [
+    '<< /Type /Catalog /Pages 2 0 R >>',
+    '<< /Type /Pages /Count 2 /Kids [3 0 R 4 0 R] >>',
+    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 460] /Resources <<>> /Contents 5 0 R >>',
+    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 460] /Resources <<>> /Contents 5 0 R >>',
+    '<< /Length 19 >>\nstream\n40 380 m 570 380 l S\nendstream',
+  ];
+  let pdf = '%PDF-1.4\n';
+  const offsets = objects.map((object, index) => {
+    const offset = pdf.length;
+    pdf += `${index + 1} 0 obj\n${object}\nendobj\n`;
+    return offset;
+  });
+  const xref = pdf.length;
+  pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+  for (const offset of offsets) pdf += offset.toString().padStart(10, '0') + ' 00000 n \n';
+  return Buffer.from(pdf + `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`);
+}
+
 async function register(page: Page, role: 'student' | 'instructor', name: string) {
   const email = `${role}-${Date.now()}-${Math.random().toString(16).slice(2)}@e2e.example`;
   await page.goto('/register');
@@ -45,12 +65,19 @@ test('instructor publishes an uploaded course; student enrolls, opens its file a
   await page.getByLabel('Title', { exact: true }).fill('Greeting practice');
   await page.getByLabel('Assignment lesson', { exact: true }).selectOption({ index: 1 });
   await page.getByLabel('Instructions', { exact: true }).fill('Write three Nepali greetings.');
+  await page.getByLabel('Maximum points').fill('50');
   await page.getByLabel('Worksheet', { exact: false }).setInputFiles({
-    name: 'practice.pdf', mimeType: 'application/pdf', buffer: Buffer.from('%PDF-1.4\nPractice worksheet\n%%EOF'),
+    name: 'practice.pdf', mimeType: 'application/pdf', buffer: practicePdf(),
   });
   await page.getByRole('button', { name: 'Publish assignment', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Greeting practice' })).toBeVisible();
   const assignmentsUrl = page.url();
+  await page.getByLabel('Title', { exact: true }).fill('Practice upload');
+  await page.getByLabel('Worksheet', { exact: false }).setInputFiles({
+    name: 'upload-worksheet.pdf', mimeType: 'application/pdf', buffer: practicePdf(),
+  });
+  await page.getByRole('button', { name: 'Publish assignment', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Practice upload' })).toBeVisible();
 
   const context = await browser.newContext();
   const student = await context.newPage();
@@ -76,12 +103,97 @@ test('instructor publishes an uploaded course; student enrolls, opens its file a
     await student.getByRole('link', { name: 'Start learning', exact: false }).click();
     await expect(student.getByRole('link', { name: 'Open PDF', exact: true })).toHaveAttribute('href', /^blob:/);
     await student.getByRole('link', { name: 'Lesson assignments', exact: true }).click();
+    await expect(student.getByRole('link', { name: 'Back to lesson', exact: true })).toBeVisible();
+    await expect(student.getByRole('heading', { name: 'Practice upload' })).toHaveCount(0);
     await expect(student.getByRole('heading', { name: 'Greeting practice' })).toBeVisible();
     await expect(student.getByText('Write three Nepali greetings.')).toBeVisible();
     const worksheetDownload = student.waitForEvent('download');
     await student.getByRole('button', { name: 'Download worksheet', exact: true }).click();
     expect((await worksheetDownload).suggestedFilename()).toBe('practice.pdf');
-    await student.getByRole('link', { name: /Course lessons/ }).click();
+    await student.route('**/worksheet', route => route.fulfill({
+      contentType: 'application/pdf', body: '%PDF-1.4\n%%EOF',
+    }), { times: 1 });
+    await student.getByRole('button', { name: 'Not submitted (1)', exact: true }).click();
+    await expect(student).toHaveURL(/status=pending/);
+    await student.getByRole('link', { name: 'Open in whiteboard' }).click();
+    await expect(student.getByRole('alert')).toHaveText('This PDF is incomplete or damaged. Ask your teacher for a new copy.');
+    await expect(student.getByRole('button', { name: 'Download worksheet' })).toBeVisible();
+    await student.getByRole('button', { name: 'Retry worksheet' }).click();
+    await expect(student.getByAltText('Assignment worksheet, page 1')).toBeVisible();
+    const annotations = student.locator('svg[aria-label="Worksheet annotations"]');
+    await student.getByRole('button', { name: 'Text', exact: true }).click();
+    await student.getByLabel('Text to place').fill('Namaste');
+    await annotations.click({ position: { x: 100, y: 100 } });
+    await expect(student.getByRole('status').filter({ hasText: 'Private draft saved' })).toBeVisible();
+    await student.getByRole('button', { name: 'Highlighter' }).click();
+    await annotations.click({ position: { x: 150, y: 150 } });
+    const highlight = annotations.locator('path[opacity="0.36"][data-mark]');
+    await expect(highlight).toHaveCount(1);
+    await student.getByRole('button', { name: 'Eraser' }).click();
+    await annotations.click({ position: { x: 150, y: 150 } });
+    await expect(highlight).toHaveCount(0);
+    await student.getByRole('button', { name: 'Undo', exact: true }).click();
+    await expect(highlight).toHaveCount(1);
+    await student.getByRole('button', { name: 'Redo', exact: true }).click();
+    await expect(highlight).toHaveCount(0);
+    await student.getByRole('button', { name: 'Undo', exact: true }).click();
+    await expect(student.getByRole('status').filter({ hasText: 'Private draft saved' })).toBeVisible();
+    await student.getByRole('button', { name: 'Next page' }).click();
+    await expect(student.getByText('Page 2 of 2', { exact: true })).toBeVisible();
+    await expect(annotations.getByText('Namaste')).toHaveCount(0);
+    await student.reload();
+    await expect(annotations.getByText('Namaste')).toBeVisible();
+    await expect(highlight).toHaveCount(1);
+    await student.once('dialog', dialog => dialog.accept()).getByRole('button', { name: 'Submit from whiteboard' }).click();
+    await expect(student.getByRole('status').filter({ hasText: 'Assignment submitted' })).toBeVisible();
+    await student.getByRole('link', { name: 'Back to assignments' }).click();
+    await expect(student).toHaveURL(/lesson=\d+.*status=pending/);
+    await student.getByRole('link', { name: 'View all assignments', exact: true }).click();
+    await expect(student.getByRole('heading', { name: 'My Assignments' })).toBeVisible();
+    await expect(student.getByRole('button', { name: 'In review (1)', exact: true })).toBeVisible();
+    const uploaded = student.locator('article').filter({ has: student.getByRole('heading', { name: 'Practice upload' }) });
+    await uploaded.getByRole('button', { name: 'Upload & submit' }).click();
+    await uploaded.getByLabel('Finished work').setInputFiles({
+      name: 'my-work.pdf', mimeType: 'application/pdf', buffer: practicePdf(),
+    });
+    await student.once('dialog', dialog => dialog.accept()).getByRole('button', { name: 'Submit work', exact: true }).click();
+    await expect(student.getByRole('button', { name: 'Completed (1)', exact: true })).toBeVisible();
+    const finishedDownload = student.waitForEvent('download');
+    await uploaded.getByRole('button', { name: 'Download submission' }).click();
+    expect((await finishedDownload).suggestedFilename()).toBe('my-work.pdf');
+
+    const grading = page.locator('article').filter({ has: page.getByRole('heading', { name: 'Greeting practice' }) });
+    await page.reload();
+    await page.getByLabel('Filter by assignment type').selectOption('homework');
+    await expect(page).toHaveURL(/kind=homework/);
+    await expect(grading.getByText('1 submission', { exact: true })).toBeVisible();
+    await grading.getByRole('link', { name: 'View submissions' }).click();
+    await page.getByRole('link', { name: 'View submitted whiteboard' }).click();
+    await expect(page.getByText('Namaste', { exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Pen', exact: true })).toHaveCount(0);
+    await page.getByRole('link', { name: 'Back to submissions' }).click();
+    await page.getByRole('button', { name: 'Next ungraded' }).click();
+    await expect(page.getByRole('heading', { name: 'Course Student' })).toBeFocused();
+    await page.getByLabel('Score out of 50').fill('42');
+    await page.getByLabel('Teacher feedback').fill('Good work on your greetings.');
+    await page.getByRole('button', { name: 'Return grade' }).click();
+    await expect(page.getByText('Review saved.')).toBeVisible();
+    await expect(page.getByText('All submissions graded')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Return grade' })).toHaveCount(0);
+    await page.reload();
+    await expect(page.getByText('42 / 50', { exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'Edit grade' }).click();
+    await expect(page.getByLabel('Teacher feedback')).toHaveValue('Good work on your greetings.');
+    await page.getByRole('button', { name: 'Cancel', exact: true }).click();
+    await page.getByRole('link', { name: 'Back to assignments' }).click();
+    await expect(page.getByLabel('Filter by assignment type')).toHaveValue('homework');
+    await student.reload();
+    await expect(student.getByRole('button', { name: 'Graded (1)', exact: true })).toBeVisible();
+    await expect(student.getByText('42 / 50', { exact: true })).toBeVisible();
+    await student.getByText('View grade and feedback', { exact: true }).click();
+    await expect(student.getByText('Good work on your greetings.')).toBeVisible();
+    await student.goto(assignmentsUrl);
+    await student.getByRole('link', { name: 'Lessons', exact: true }).click();
     await student.getByRole('button', { name: 'Mark lesson complete', exact: false }).click();
     await expect(student.getByRole('button', { name: 'Completed — mark incomplete', exact: false })).toBeVisible();
     await student.reload();

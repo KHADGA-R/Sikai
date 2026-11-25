@@ -8,10 +8,15 @@
     <aside class="panel course-list"><h2>My courses</h2>@for(course of courses(); track course.id){<button type="button" [class.selected-course]="draft?.id === course.id" [disabled]="busy()" (click)="edit(course)"><strong>{{course.title || 'Untitled course'}}</strong><small>{{course.published ? (course.revision ? 'Unpublished changes' : 'Published') : 'Draft'}} · {{course.topics.length}} modules</small></button>}@empty{<p>No saved courses yet. Create your first course.</p>}</aside>
     <div>
     @if(draft; as course){
+      @if (course.published) {
+        <nav class="course-section-nav" aria-label="Course sections">
+          <a href="#course-curriculum" aria-current="page">Lessons</a>
+          <a [routerLink]="['/courses', course.id, 'assignments']">Assignments</a>
+        </nav>
+      }
       <div class="panel"><div class="editor-heading"><h2>Course editor</h2><span>{{dirty ? 'Unsaved changes' : 'Saved'}}</span></div>
         <nav class="curriculum-outline" aria-label="Course setup">
           <a href="#course-details">Course details</a><a href="#course-curriculum">Curriculum</a><a href="#course-publishing">Preview and publish</a>
-          @if (course.published) { <a [routerLink]="['/courses', course.id, 'assignments']">Assignments</a> }
         </nav>
         <fieldset [disabled]="busy()">
         <h3 id="course-details">Course details</h3>

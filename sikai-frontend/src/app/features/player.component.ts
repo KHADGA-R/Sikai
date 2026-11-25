@@ -1,5 +1,5 @@
 import { Component, computed, effect, inject, signal } from '@angular/core';
-import { ActivatedRoute, RouterLink } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { LearnHubStore } from '../core/store.service';
 import { ApiService } from '../core/api.service';
@@ -11,11 +11,14 @@ import { formatTime } from '../core/instructor-content';
   @if(loading()){<p role="status">Loading curriculum...</p>}
   @if(course(); as c){
     @if(store.isEnrolled(c.id)){
-      <div class="player-header"><a class="back" routerLink="/my-learning">← My learning</a><span class="eyebrow purple">LEARNING PLAYER</span><h1>{{c.title}}</h1><p>Work through your lessons and track your progress.</p></div>
+      <div class="player-header"><a class="back" routerLink="/my-learning">← My Learning</a><h1>{{c.title}}</h1><p>Work through your lessons and track your progress.</p></div>
       @if(lessons().length && completedCount() === lessons().length) {
         <p><a class="button outline" [routerLink]="['/certificates/earn', c.id]">Get your certificate</a></p>
       }
-      <p><a class="button outline" [routerLink]="['/courses',c.id,'assignments']">Assignments</a></p>
+      <nav class="course-section-nav" aria-label="Course sections">
+        <a [routerLink]="['/learn', c.id]" aria-current="page">Lessons</a>
+        <a [routerLink]="['/courses', c.id, 'assignments']">Assignments</a>
+      </nav>
       <div class="player-layout"><div>
         @if(selectedLesson(); as lesson){
           @if(fileLoading()){<p role="status">Loading lesson file...</p>}
@@ -27,7 +30,8 @@ import { formatTime } from '../core/instructor-content';
           <div class="lesson-content"><h2>{{lesson.title}}</h2>@if(lesson.description){<p style="white-space:pre-line">{{lesson.description}}</p>}
             <p><a [routerLink]="['/courses',c.id,'assignments']" [queryParams]="{lesson: lesson.id}">Lesson assignments</a></p>
             @if(lesson.slidesName){<button type="button" class="button outline" [disabled]="slidesLoading()" (click)="downloadSlides(lesson.id, lesson.slidesName)">{{slidesLoading() ? 'Downloading slides…' : 'Download ' + lesson.slidesName}}</button>}<button class="button primary" [disabled]="store.pending().includes('lesson:'+lesson.id)" (click)="store.toggleLesson(c.id,lesson.id)">{{isCompleted() ? '✓ Completed — mark incomplete' : '✓ Mark lesson complete'}}</button></div>
-        } @else if(!loading()){<div class="empty"><h2>No lessons yet</h2><p>Your instructor is preparing this course.</p></div>}
+        } @else if(!loading()){<div class="empty"><h2>No lessons yet</h2><p>Your instructor is preparing this course.</p>
+          <a class="button outline" [routerLink]="['/courses', c.id, 'assignments']">View assignments</a></div>}
       </div><aside class="curriculum-panel"><h3>Course curriculum</h3><p>{{completedCount()}} / {{lessons().length}} completed</p><div class="progress-line"><span [style.width.%]="progressPercent()"></span></div>
         @for(module of store.topics(c.id); track module.id) {
           <div class="curriculum-module">
@@ -44,12 +48,14 @@ import { formatTime } from '../core/instructor-content';
       </aside></div>
     } @else if(!store.personalLoading()){<div class="empty"><h2>Enroll to start learning</h2><a class="button primary" [routerLink]="['/courses',c.id]">View course</a></div>}
   } @else if(!loading()){<div class="empty">Course not found. <a routerLink="/">Browse courses</a></div>}
-</section>` })
+  </section>` })
 export class PlayerComponent {
   readonly store = inject(LearnHubStore);
   private readonly api = inject(ApiService);
   private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
   private readonly params = toSignal(this.route.paramMap, { initialValue: this.route.snapshot.paramMap });
+  private readonly query = toSignal(this.route.queryParamMap, { initialValue: this.route.snapshot.queryParamMap });
   readonly id = computed(() => Number(this.params().get('id')));
   readonly course = computed(() => this.store.getCourse(this.id()));
   readonly lessons = computed(() => this.store.lessons(this.id()));
@@ -74,7 +80,11 @@ export class PlayerComponent {
         finally { if (active) this.loading.set(false); }
       })();
     });
-    effect(() => { const lessons = this.lessons(); if (!lessons.some(l => l.id === this.selected())) this.selected.set(lessons[0]?.id ?? null); });
+    effect(() => {
+      const lessons = this.lessons();
+      const requested = Number(this.query().get('lesson'));
+      this.selected.set(lessons.find(lesson => lesson.id === requested)?.id ?? lessons[0]?.id ?? null);
+    });
     effect(onCleanup => {
       const lesson = this.selectedLesson(); this.fileRetry();
       let active = true; let url = '';
@@ -102,5 +112,9 @@ export class PlayerComponent {
   }
 
   /** Select a real lesson ID and trigger a file retry even if that lesson was already selected. */
-  choose(id: number): void { this.selected.set(id); this.fileRetry.update(n => n + 1); }
+  choose(id: number): void {
+    this.selected.set(id);
+    this.fileRetry.update(n => n + 1);
+    void this.router.navigate([], { relativeTo: this.route, queryParams: { lesson: id }, replaceUrl: true });
+  }
 }

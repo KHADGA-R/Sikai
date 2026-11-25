@@ -49,3 +49,24 @@ footer{background:var(--sikai-teal)}
 }
 .featured-grid .card-title { overflow-wrap: anywhere; }
 .featured-grid .card-bottom { margin-top: auto; }
+.course-section-nav {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 18px;
+  border-bottom: 1px solid #dedeea;
+  margin: 12px 0 18px;
+}
+.course-section-nav a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 42px;
+  padding: 0 7px;
+  border-bottom: 2px solid transparent;
+  color: #354563;
+  font-weight: 650;
+}
+.course-section-nav a[aria-current=page] {
+  border-bottom-color: #0754a8;
+  color: #0754a8;
+}
