@@ -11,6 +11,7 @@
       <div class="panel"><div class="editor-heading"><h2>Course editor</h2><span>{{dirty ? 'Unsaved changes' : 'Saved'}}</span></div>
         <nav class="curriculum-outline" aria-label="Course setup">
           <a href="#course-details">Course details</a><a href="#course-curriculum">Curriculum</a><a href="#course-publishing">Preview and publish</a>
+          @if (course.published) { <a [routerLink]="['/courses', course.id, 'assignments']">Assignments</a> }
         </nav>
         <fieldset [disabled]="busy()">
         <h3 id="course-details">Course details</h3>

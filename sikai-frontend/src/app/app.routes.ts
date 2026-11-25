@@ -28,6 +28,7 @@ export const routes: Routes = [
   { path: 'login', loadComponent: () => import('./features/auth.component').then(m => m.AuthComponent), title: 'Log in | Sikai' },
   { path: 'register', loadComponent: () => import('./features/auth.component').then(m => m.AuthComponent), title: 'Create account | Sikai' },
   { path: '', loadComponent: () => import('./features/catalog.component').then(m => m.CatalogComponent), title: 'Explore courses | Sikai' },
+  { path: 'courses/:id/assignments', canActivate: [authGuard], loadComponent: () => import('./features/course-assignments.component').then(m => m.CourseAssignmentsComponent), title: 'Course assignments | Sikai' },
   { path: 'courses/:id', loadComponent: () => import('./features/course-detail.component').then(m => m.CourseDetailComponent), title: 'Course details | Sikai' },
   { path: 'wishlist', canActivate: [authGuard], loadComponent: () => import('./features/wishlist.component').then(m => m.WishlistComponent), title: 'Wishlist | Sikai' },
   { path: 'my-learning', canActivate: [authGuard], loadComponent: () => import('./features/my-learning.component').then(m => m.MyLearningComponent), title: 'My learning | Sikai' },

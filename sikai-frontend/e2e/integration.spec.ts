@@ -40,6 +40,17 @@ test('instructor publishes an uploaded course; student enrolls, opens its file a
   await expect(page.getByText('greetings.pdf', { exact: false }).first()).toBeVisible();
   await page.getByRole('button', { name: 'Review and publish', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Publish changes', exact: true })).toBeVisible();
+  await page.getByRole('link', { name: 'Assignments', exact: true }).click();
+  await page.getByText('New assignment', { exact: true }).click();
+  await page.getByLabel('Title', { exact: true }).fill('Greeting practice');
+  await page.getByLabel('Assignment lesson', { exact: true }).selectOption({ index: 1 });
+  await page.getByLabel('Instructions', { exact: true }).fill('Write three Nepali greetings.');
+  await page.getByLabel('Worksheet', { exact: false }).setInputFiles({
+    name: 'practice.pdf', mimeType: 'application/pdf', buffer: Buffer.from('%PDF-1.4\nPractice worksheet\n%%EOF'),
+  });
+  await page.getByRole('button', { name: 'Publish assignment', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Greeting practice' })).toBeVisible();
+  const assignmentsUrl = page.url();
 
   const context = await browser.newContext();
   const student = await context.newPage();
@@ -50,6 +61,10 @@ test('instructor publishes an uploaded course; student enrolls, opens its file a
     await student.getByRole('link', { name: 'Integrated Nepali Course', exact: false }).first().click();
     await expect(student).toHaveURL(/\/courses\/\d+$/);
     const courseUrl = student.url();
+    await student.goto(assignmentsUrl);
+    await expect(student.getByRole('alert')).toBeVisible();
+    await expect(student.getByRole('heading', { name: 'Greeting practice' })).toHaveCount(0);
+    await student.goto(courseUrl);
     await student.getByRole('button', { name: 'Free preview' }).click();
     await expect(student.getByRole('link', { name: 'Open preview PDF' })).toHaveAttribute('href', /\/preview\/\d+$/);
     await student.getByRole('button', { name: 'Add to wishlist', exact: false }).click();
@@ -60,6 +75,13 @@ test('instructor publishes an uploaded course; student enrolls, opens its file a
     await student.getByRole('button', { name: 'Complete free enrollment', exact: false }).click();
     await student.getByRole('link', { name: 'Start learning', exact: false }).click();
     await expect(student.getByRole('link', { name: 'Open PDF', exact: true })).toHaveAttribute('href', /^blob:/);
+    await student.getByRole('link', { name: 'Lesson assignments', exact: true }).click();
+    await expect(student.getByRole('heading', { name: 'Greeting practice' })).toBeVisible();
+    await expect(student.getByText('Write three Nepali greetings.')).toBeVisible();
+    const worksheetDownload = student.waitForEvent('download');
+    await student.getByRole('button', { name: 'Download worksheet', exact: true }).click();
+    expect((await worksheetDownload).suggestedFilename()).toBe('practice.pdf');
+    await student.getByRole('link', { name: /Course lessons/ }).click();
     await student.getByRole('button', { name: 'Mark lesson complete', exact: false }).click();
     await expect(student.getByRole('button', { name: 'Completed — mark incomplete', exact: false })).toBeVisible();
     await student.reload();

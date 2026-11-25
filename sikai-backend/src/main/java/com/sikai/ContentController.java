@@ -165,6 +165,10 @@ public class ContentController {
         return savedFile(key,name,type);
     }
 
+    void discardAssetFile(String key) throws java.io.IOException {
+        Files.deleteIfExists(root.resolve(key));
+    }
+
     @GetMapping("/courses/{courseId}/cover/{assetId}")
     public ResponseEntity<Resource> cover(@PathVariable long courseId,@PathVariable String assetId,@AuthenticationPrincipal AuthService.User user) {
         catalog.course(courseId,user);

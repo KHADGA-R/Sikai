@@ -15,6 +15,7 @@ import { formatTime } from '../core/instructor-content';
       @if(lessons().length && completedCount() === lessons().length) {
         <p><a class="button outline" [routerLink]="['/certificates/earn', c.id]">Get your certificate</a></p>
       }
+      <p><a class="button outline" [routerLink]="['/courses',c.id,'assignments']">Assignments</a></p>
       <div class="player-layout"><div>
         @if(selectedLesson(); as lesson){
           @if(fileLoading()){<p role="status">Loading lesson file...</p>}
@@ -24,6 +25,7 @@ import { formatTime } from '../core/instructor-content';
             @else{<div class="video-placeholder"><span>📄</span><strong>{{lesson.title}}</strong><a class="button primary" [href]="fileUrl()" target="_blank" rel="noopener">Open PDF</a></div>}
           } @else if(!fileLoading()){<div class="video-placeholder"><span>{{c.emoji}}</span><strong>{{lesson.title}}</strong><small>{{lesson.hasFile ? 'Unable to load this file. Select the lesson again to retry.' : 'Your instructor has not uploaded this file yet.'}}</small></div>}
           <div class="lesson-content"><h2>{{lesson.title}}</h2>@if(lesson.description){<p style="white-space:pre-line">{{lesson.description}}</p>}
+            <p><a [routerLink]="['/courses',c.id,'assignments']" [queryParams]="{lesson: lesson.id}">Lesson assignments</a></p>
             @if(lesson.slidesName){<button type="button" class="button outline" [disabled]="slidesLoading()" (click)="downloadSlides(lesson.id, lesson.slidesName)">{{slidesLoading() ? 'Downloading slides…' : 'Download ' + lesson.slidesName}}</button>}<button class="button primary" [disabled]="store.pending().includes('lesson:'+lesson.id)" (click)="store.toggleLesson(c.id,lesson.id)">{{isCompleted() ? '✓ Completed — mark incomplete' : '✓ Mark lesson complete'}}</button></div>
         } @else if(!loading()){<div class="empty"><h2>No lessons yet</h2><p>Your instructor is preparing this course.</p></div>}
       </div><aside class="curriculum-panel"><h3>Course curriculum</h3><p>{{completedCount()}} / {{lessons().length}} completed</p><div class="progress-line"><span [style.width.%]="progressPercent()"></span></div>
