@@ -525,10 +525,10 @@ test('live teacher availability, student booking, messaging, meeting link and ca
     await liveAnswerInput.fill('Practice here\nTry a second rhythm');
     const liveFontSize = student.getByRole('group', { name: 'Font size', exact: true });
     await liveFontSize.getByRole('button', { name: 'Decrease font size' }).click();
-    await expect(liveFontSize.getByText('20', { exact: true })).toBeVisible();
+    await expect(liveFontSize).toHaveAttribute('aria-description', 'Current size 20');
     await liveFontSize.getByRole('button', { name: 'Increase font size' }).click();
     await liveFontSize.getByRole('button', { name: 'Increase font size' }).click();
-    await expect(liveFontSize.getByText('32', { exact: true })).toBeVisible();
+    await expect(liveFontSize).toHaveAttribute('aria-description', 'Current size 32');
     await student.getByRole('button', { name: 'Move answer' }).press('ArrowRight');
     await student.getByRole('button', { name: 'Resize answer' }).press('ArrowRight');
     await student.getByRole('button', { name: 'Apply answer' }).click();

@@ -213,10 +213,10 @@
               <input aria-label="Color" type="color" [value]="color()" (input)="color.set($any($event.target).value)" />
             </label>
             @if (tool() === 'text' || tool() === 'equation' || answer()) {
-              <div class="font-size-stepper" role="group" aria-label="Font size">
+              <div class="font-size-stepper" role="group" aria-label="Font size"
+                   [attr.aria-description]="'Current size ' + currentTextSize()">
                 <button type="button" aria-label="Decrease font size" title="Decrease font size"
                         [disabled]="busy() || currentTextSize() <= 16" (click)="stepTextSize(-1)">A−</button>
-                <output aria-label="Current font size">{{ currentTextSize() }}</output>
                 <button type="button" aria-label="Increase font size" title="Increase font size"
                         [disabled]="busy() || currentTextSize() >= 48" (click)="stepTextSize(1)">A+</button>
               </div>
