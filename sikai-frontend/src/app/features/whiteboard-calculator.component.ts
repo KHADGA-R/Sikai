@@ -16,7 +16,7 @@ export interface CalculatorPreview {
   standalone: true,
   imports: [ThemeIconComponent],
   template: `
-    <section [attr.aria-label]="shared() ? 'Teacher’s calculator' : 'Class calculator'">
+    <section [attr.aria-label]="shared() ? 'Teacher’s calculator' : label()">
       <div class="calculator-header">
         <button type="button" class="drag" aria-label="Move calculator" title="Drag or use the arrow keys to move"
           (pointerdown)="beginDrag($event)" (pointermove)="drag($event)" (pointerup)="endDrag()"
@@ -24,7 +24,7 @@ export interface CalculatorPreview {
           <app-theme-icon name="calculator" /> <span>{{ shared() ? 'Teacher’s calculator' : 'Calculator' }}</span>
         </button>
         @if (position()) {
-          <button type="button" class="header-button" title="Dock below Slides" aria-label="Dock calculator"
+          <button type="button" class="header-button" title="Dock calculator" aria-label="Dock calculator"
             (click)="dock()">↙</button>
         }
         @if (!shared()) {
@@ -123,6 +123,7 @@ export interface CalculatorPreview {
 export class WhiteboardCalculatorComponent {
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
   readonly shared = input<CalculatorPreview | null>(null);
+  readonly label = input('Class calculator');
   readonly initialMode = input<'standard' | 'scientific'>('standard');
   readonly sharingAvailable = input(false);
   readonly sharingUnavailable = input('');

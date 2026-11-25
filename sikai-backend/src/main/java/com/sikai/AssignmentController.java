@@ -1,6 +1,7 @@
 package com.sikai;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.annotation.JsonInclude;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.*;
 import java.util.Map;
@@ -39,16 +40,19 @@ public class AssignmentController {
         this.json = json;
     }
 
+    @JsonInclude(JsonInclude.Include.NON_NULL)
     public record Point(@NotNull @DecimalMin("0") @DecimalMax("1") Double x,
-                        @NotNull @DecimalMin("0") @DecimalMax("1") Double y) {}
+                        @NotNull @DecimalMin("0") @DecimalMax("1") Double y,
+                        @DecimalMin("0") @DecimalMax("1") Double pressure) {}
     public record Mark(@Positive @Max(100000) int page,
-                       @NotNull @Pattern(regexp="pen|highlighter|line|arrow|rectangle|ellipse|circle|text") String tool,
+                       @NotNull @Pattern(regexp="pen|highlighter|line|arrow|rectangle|ellipse|circle|text|erase") String tool,
                        @NotNull @Pattern(regexp="#[0-9a-fA-F]{6}") String color,
                        @NotNull @Size(min=1,max=128) List<@NotNull @Valid Point> points,
                        @Size(max=1000) String text,
                        @Min(2) @Max(24) Integer width,
                        @Pattern(regexp="solid|dashed|dotted") String style,
-                       @DecimalMin("0.15") @DecimalMax("0.85") Double boxWidth) {}
+                       @DecimalMin("0.15") @DecimalMax("0.85") Double boxWidth,
+                       Boolean equation) {}
     public record WorkspaceInput(@PositiveOrZero long revision,
                                  @NotNull @Size(max=400) List<@NotNull @Valid Mark> marks) {}
 
@@ -79,7 +83,7 @@ public class AssignmentController {
                                 @AuthenticationPrincipal AuthService.User user) throws Exception {
         requireStudent(courseId, user);
         String annotations = json.writeValueAsString(input.marks());
-        Db.require(annotations.length() <= 2000000, BAD_REQUEST, "The whiteboard has reached its storage limit");
+        Db.require(annotations.length() <= 3500000, BAD_REQUEST, "The whiteboard has reached its storage limit");
         db.one("SELECT id FROM course_assignment WHERE course_id=? AND id=? FOR UPDATE", courseId, id);
         var rows = workspaceRows(id, user);
         long revision = rows.isEmpty() ? 0 : ((Number) rows.get(0).get("revision")).longValue();

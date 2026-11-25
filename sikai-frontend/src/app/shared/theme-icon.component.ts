@@ -59,5 +59,6 @@ export class ThemeIconComponent {
     check: 'M5 12l4 4L19 6',
     close: 'M6 6l12 12 M18 6L6 18',
     resize: 'M7 17 17 7 M7 11v6h6 M11 7h6v6',
+    equation: 'M3 13h3l3 6 4-14h8 M15 10h6 M15 15h6',
   };
 }
