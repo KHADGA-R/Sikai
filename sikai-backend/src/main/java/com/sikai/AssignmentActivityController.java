@@ -13,8 +13,10 @@ import java.util.Map;
 import javax.imageio.ImageIO;
 import javax.imageio.stream.MemoryCacheImageInputStream;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 import static org.springframework.http.HttpStatus.BAD_REQUEST;
+import static org.springframework.http.HttpStatus.NOT_FOUND;
 
 @RestController
 @RequestMapping("/api/courses/{courseId}/assignments")
@@ -29,6 +31,7 @@ public class AssignmentActivityController {
                              @Size(max=240) String imageAlt) {}
     public record Publish(@NotNull @Valid AssignmentController.AssignmentInput assignment,
                           @NotNull @Valid Definition activity, @Size(max=1400000) String image) {}
+    public record Publication(@NotNull Boolean published) {}
 
     private final Db db;
     private final CatalogService catalog;
@@ -84,10 +87,34 @@ public class AssignmentActivityController {
                            @AuthenticationPrincipal AuthService.User user) throws Exception {
         catalog.accessContent(courseId, user);
         var record = db.one("""
-            SELECT title,instructions,activity_definition,max_points,activity_image FROM course_assignment
+            SELECT title,instructions,activity_definition,max_points,activity_image,activity_published FROM course_assignment
             WHERE id=? AND course_id=? AND activity_definition IS NOT NULL
             """, id, courseId);
+        var course = catalog.course(courseId, user);
+        Db.require(Boolean.TRUE.equals(record.get("activity_published")) || user.id().equals(course.get("ownerId"))
+            || user.role().equals("admin") || canReview(id, user.id()), NOT_FOUND, "This activity is unpublished");
         return playable(record, json.readValue((String) record.get("activity_definition"), Definition.class));
+    }
+
+    @PatchMapping("/{id}/activity/publication")
+    @Transactional
+    public void publication(@PathVariable long courseId, @PathVariable String id,
+                            @Valid @RequestBody Publication input, @AuthenticationPrincipal AuthService.User user) {
+        catalog.owner(courseId, user);
+        Db.require(db.update("""
+            UPDATE course_assignment SET activity_published=? WHERE course_id=? AND id=? AND activity_definition IS NOT NULL
+            """, input.published(), courseId, id) == 1, NOT_FOUND, "Activity not found");
+        if (!input.published()) {
+            db.update("UPDATE live_activity_run SET ended_at=? WHERE assignment_id=? AND ended_at IS NULL",
+                System.currentTimeMillis(), id);
+        }
+    }
+
+    boolean canReview(String assignmentId, String studentId) {
+        return db.exists("""
+            SELECT assignment_id FROM assignment_submission WHERE assignment_id=? AND student_id=?
+            UNION ALL SELECT assignment_id FROM activity_attempt WHERE scope_id=? AND student_id=? AND finished_at IS NOT NULL
+            """, assignmentId, studentId, assignmentId, studentId);
     }
 
     static Map<String,Object> playable(Map<String,Object> record, Definition definition) {
@@ -96,6 +123,7 @@ public class AssignmentActivityController {
             "mode", definition.mode(), "targets", definition.targets(), "cards", cards, "graded", record.get("max_points") != null));
         if (definition.imageAlt() != null) result.put("imageAlt", definition.imageAlt());
         if (record.get("activity_image") != null) result.put("image", record.get("activity_image"));
+        if (Boolean.FALSE.equals(record.get("activity_published"))) result.put("unpublished", true);
         return result;
     }
 

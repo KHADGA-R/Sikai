@@ -17,6 +17,7 @@ interface Run {
   round: number;
   activity: LiveActivity;
   closed: boolean;
+  published: boolean;
   expired?: boolean;
   remainingMillis?: number;
   solution?: Placement[];
@@ -25,7 +26,7 @@ interface Run {
   summaryShared?: boolean;
   grade?: { score: number; maxPoints: number; feedback: string };
 }
-interface LibraryItem { id: string; title: string; courseTitle: string; }
+interface LibraryItem { id: string; title: string; courseTitle: string; published: boolean; }
 
 @Component({
   selector: 'app-live-class-activities',
@@ -40,7 +41,9 @@ interface LibraryItem { id: string; title: string; courseTitle: string; }
           <label>Activity
             <select aria-label="Choose activity" [value]="choice()" (change)="select($any($event.target).value)">
               <option value="">Choose an activity</option>
-              @for (item of library(); track item.id) { <option [value]="item.id">{{ item.title }} · {{ item.courseTitle }}</option> }
+              @for (item of library(); track item.id) {
+                <option [value]="item.id">{{ item.title }} · {{ item.courseTitle }}{{ item.published ? '' : ' (Unpublished)' }}</option>
+              }
             </select>
           </label>
           <button type="button" [disabled]="libraryLoading()" (click)="loadLibrary()">
@@ -57,9 +60,16 @@ interface LibraryItem { id: string; title: string; courseTitle: string; }
           }
           <div class="heading">
             <button type="button" [disabled]="busy() || !choice()" (click)="loadPreview()">Preview activity</button>
-            @if (choice() !== run()?.assignmentId) {
-              <button type="button" class="button primary" [disabled]="busy() || !choice() || !validDuration()" (click)="launch(choice())">Launch for class</button>
-            }
+            <div class="activity-actions">
+              @if (selection(); as selected) {
+                <button type="button" [disabled]="busy()" (click)="setPublication(selected)">
+                  {{ selected.published ? 'Unpublish activity' : 'Republish activity' }}
+                </button>
+              }
+              <button type="button" class="button primary" [disabled]="busy() || !selection()?.published || !validDuration()" (click)="launch(choice())">
+                {{ choice() && choice() === run()?.assignmentId ? 'Run again' : 'Launch for class' }}
+              </button>
+            </div>
           </div>
           @if (preview(); as sample) {
             <div class="heading"><h4>Preview</h4><button type="button" (click)="preview.set(null)">Close preview</button></div>
@@ -68,28 +78,36 @@ interface LibraryItem { id: string; title: string; courseTitle: string; }
           }
         }
         @if (run(); as current) {
-          <h3>{{ current.activity.title }}</h3>
-          <p>Round {{ current.round }}</p>
-          @if (current.activity.instructions) { <p class="instructions">{{ current.activity.instructions }}</p> }
+          @if (!teacher()) {
+            <h3>{{ current.activity.title }}</h3>
+            @if (current.activity.instructions.trim() && current.activity.instructions.trim() !== current.activity.title.trim()) {
+              <p class="instructions">{{ current.activity.instructions }}</p>
+            }
+          }
           @if (activityClosed()) {
-            <p role="status">{{ timeExpired() ? 'Time’s up. Activity closed.' : 'Activity closed' }}</p>
+            @if (timeExpired()) { <p role="status">Time’s up.</p> }
+            @else if (!teacher()) { <p role="status">Activity closed</p> }
           } @else if (remainingSeconds() != null) {
             <p class="activity-timer" [class.timer-low]="remainingSeconds()! <= 30" role="timer" aria-label="Time remaining">
               <span>Time left</span> <strong>{{ countdown() }}</strong>
             </p>
           }
           @if (teacher()) {
+            @if ((current.published && choice() !== current.assignmentId) || !activityClosed() || !current.solution) {
+              <div class="heading">
+                @if (current.published && choice() !== current.assignmentId) {
+                  <button type="button" [disabled]="busy() || !validDuration()" (click)="launch(current.assignmentId)">Run again</button>
+                }
+                @if (!activityClosed()) {
+                  <button type="button" [disabled]="busy()" (click)="close(false)">Close activity</button>
+                }
+                @if (!current.solution) {
+                  <button type="button" [disabled]="busy()" (click)="close(true)">{{ activityClosed() ? 'Reveal answers' : 'Close and reveal answers' }}</button>
+                }
+              </div>
+            }
             <div class="heading">
-              <button type="button" [disabled]="busy() || !validDuration()" (click)="launch(current.assignmentId)">Run again</button>
-              @if (!activityClosed()) {
-                <button type="button" [disabled]="busy()" (click)="close(false)">Close activity</button>
-              }
-              @if (!current.solution) {
-                <button type="button" [disabled]="busy()" (click)="close(true)">{{ activityClosed() ? 'Reveal answers' : 'Close and reveal answers' }}</button>
-              }
-            </div>
-            <div class="heading">
-              <h4>Student progress</h4>
+              <h4>Student progress @if (choice() !== current.assignmentId) { <span>· {{ current.activity.title }}</span> }</h4>
               <label class="ranking-toggle"><input type="checkbox" [checked]="showRanking()"
                 (change)="showRanking.set($any($event.target).checked)" /> Show private ranking</label>
             </div>
@@ -180,6 +198,7 @@ interface LibraryItem { id: string; title: string; courseTitle: string; }
     .missed { margin: 5px 0; padding-inline-start: 20px; }
     button { border: 1px solid #bbcfc8; border-radius: 6px; background: white; color: #1d3434; padding: 5px 7px; }
     .instructions { white-space: pre-wrap; overflow-wrap: anywhere; }
+    .activity-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
     .activity-timer { display: inline-flex; gap: 8px; align-items: center; padding: 5px 9px; border-radius: 8px;
       color: #174b42; background: #e7f4ee; font-variant-numeric: tabular-nums; }
     .activity-timer.timer-low { color: #862830; background: #fdf0ef; }
@@ -198,6 +217,7 @@ export class LiveClassActivitiesComponent {
     return this.showRanking() ? [...students].sort((a, b) => (a.rank ?? Infinity) - (b.rank ?? Infinity)) : students;
   });
   readonly library = signal<LibraryItem[]>([]);
+  readonly selection = computed(() => this.library().find(item => item.id === this.choice()));
   readonly libraryLoaded = signal(false);
   readonly libraryLoading = signal(false);
   readonly libraryError = signal('');
@@ -286,11 +306,17 @@ export class LiveClassActivitiesComponent {
     try {
       const state = await this.api.request<Run | { active: false }>('GET', this.path());
       if (this.stopped) return;
-      if (!state.active) { this.run.set(null); this.timerEnds.set(null); return; }
+      if (!state.active) {
+        if (!this.teacher() && this.run()) this.open.set(false);
+        this.run.set(null);
+        this.timerEnds.set(null);
+        return;
+      }
       const now = performance.now();
       this.timerNow.set(now);
       this.timerEnds.set(state.remainingMillis == null ? null : now + state.remainingMillis);
       const previous = this.run();
+      if (!this.teacher() && previous?.published && !state.published) this.open.set(false);
       if (previous?.runId === state.runId) {
         this.run.set({ ...state, activity: previous.activity, solution: previous.solution ?? state.solution });
       } else {
@@ -304,7 +330,7 @@ export class LiveClassActivitiesComponent {
       }
       if (this.lastRunId !== state.runId) {
         this.lastRunId = state.runId;
-        if (!this.teacher()) this.open.set(true);
+        if (!this.teacher() && state.published) this.open.set(true);
       }
     } catch (error) { this.showError(error); }
     finally { this.pending = false; }
@@ -322,6 +348,14 @@ export class LiveClassActivitiesComponent {
     const current = this.run();
     if (!current || this.busy()) return;
     await this.write('PATCH', this.path() + '/' + current.runId, { reveal });
+  }
+
+  async setPublication(selected: LibraryItem): Promise<void> {
+    if (this.busy()) return;
+    const published = !selected.published;
+    if (!published && !window.confirm('Unpublish this activity and close any open rounds? Saved work and grades will be preserved.')) return;
+    await this.write('PATCH', this.path() + '/library/' + encodeURIComponent(selected.id) + '/publication', { published });
+    await this.loadLibrary();
   }
 
   async shareSummary(shared: boolean): Promise<void> {

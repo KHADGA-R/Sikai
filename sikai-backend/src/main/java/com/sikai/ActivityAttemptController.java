@@ -19,12 +19,15 @@ public class ActivityAttemptController {
     private final ObjectMapper json;
     private final WhiteboardService boards;
     private final AssignmentController assignments;
+    private final AssignmentActivityController activities;
 
-    public ActivityAttemptController(Db db, ObjectMapper json, WhiteboardService boards, AssignmentController assignments) {
+    public ActivityAttemptController(Db db, ObjectMapper json, WhiteboardService boards, AssignmentController assignments,
+                                     AssignmentActivityController activities) {
         this.db = db;
         this.json = json;
         this.boards = boards;
         this.assignments = assignments;
+        this.activities = activities;
     }
 
     public record Placement(@Positive int cardId, @Positive int targetId) {}
@@ -45,6 +48,7 @@ public class ActivityAttemptController {
                                 @AuthenticationPrincipal AuthService.User user) throws Exception {
         assignments.requireStudent(courseId, user);
         var scope = courseScope(courseId, assignmentId, false);
+        Db.require(!scope.closed() || activities.canReview(assignmentId, user.id()), NOT_FOUND, "This activity is unpublished");
         return attempt(scope.id(), user.id());
     }
 
@@ -61,18 +65,21 @@ public class ActivityAttemptController {
         boolean teacher = user.id().equals(boards.access(slotId, user).get("owner_id"));
         var rows = db.list("""
             SELECT r.id,r.assignment_id,r.started_at,r.ended_at,r.deadline_at,r.revealed,r.summary_shared,
-                   a.title,a.instructions,a.activity_definition,a.max_points
+                   a.title,a.instructions,a.activity_definition,a.max_points,a.activity_published
             FROM live_activity_run r JOIN course_assignment a ON a.id=r.assignment_id
             WHERE r.slot_id=? ORDER BY r.started_at DESC,r.id DESC LIMIT 1
             """, slotId);
         if (rows.isEmpty()) return Map.of("active", false);
         var row = rows.get(0);
         String runId = (String) row.get("id");
+        boolean published = Boolean.TRUE.equals(row.get("activity_published"));
+        if (!teacher && !published && !finishedRound(runId, user.id())) return Map.of("active", false);
         var definition = definition(row);
         var result = new HashMap<String,Object>();
         result.put("active", true);
         result.put("runId", runId);
         result.put("assignmentId", row.get("assignment_id"));
+        result.put("published", published);
         result.put("round", db.one("""
             SELECT COUNT(*) AS total FROM live_activity_run WHERE slot_id=? AND assignment_id=?
             """, slotId, row.get("assignment_id")).get("total"));
@@ -120,7 +127,8 @@ public class ActivityAttemptController {
     public Object library(@PathVariable String slotId, @AuthenticationPrincipal AuthService.User user) {
         requireTeacher(slotId, user);
         return db.list("""
-            SELECT a.id,a.title,c.title AS "courseTitle" FROM course_assignment a JOIN course c ON c.id=a.course_id
+            SELECT a.id,a.title,c.title AS "courseTitle",a.activity_published AS published
+            FROM course_assignment a JOIN course c ON c.id=a.course_id
             WHERE c.owner_id=? AND c.published=TRUE AND a.activity_definition IS NOT NULL
             ORDER BY a.published_at DESC,a.id
             """, user.id());
@@ -134,7 +142,8 @@ public class ActivityAttemptController {
         db.one("SELECT id FROM live_slot WHERE id=? FOR UPDATE", slotId);
         db.one("""
             SELECT a.id FROM course_assignment a JOIN course c ON c.id=a.course_id
-            WHERE a.id=? AND c.owner_id=? AND c.published=TRUE AND a.activity_definition IS NOT NULL
+            WHERE a.id=? AND c.owner_id=? AND c.published=TRUE AND a.activity_definition IS NOT NULL AND a.activity_published
+            FOR UPDATE
             """, input.assignmentId(), user.id());
         long now = System.currentTimeMillis();
         var latest = db.one("SELECT MAX(started_at) AS latest FROM live_activity_run WHERE slot_id=?", slotId).get("latest");
@@ -168,11 +177,25 @@ public class ActivityAttemptController {
             """, System.currentTimeMillis(), input.reveal(), runId, slotId) == 1, NOT_FOUND, "Activity not found");
     }
 
+    @PatchMapping(LIVE + "/library/{assignmentId}/publication")
+    public void publication(@PathVariable String slotId, @PathVariable String assignmentId,
+                            @Valid @RequestBody AssignmentActivityController.Publication input,
+                            @AuthenticationPrincipal AuthService.User user) {
+        requireTeacher(slotId, user);
+        var assignment = db.one("""
+            SELECT a.course_id FROM course_assignment a JOIN course c ON c.id=a.course_id
+            WHERE a.id=? AND c.owner_id=? AND c.published=TRUE AND a.activity_definition IS NOT NULL
+            """, assignmentId, user.id());
+        activities.publication(((Number) assignment.get("course_id")).longValue(), assignmentId, input, user);
+    }
+
     @GetMapping(LIVE + "/{runId}/attempt")
     public Object liveAttempt(@PathVariable String slotId, @PathVariable String runId,
                               @AuthenticationPrincipal AuthService.User user) throws Exception {
         requireParticipant(slotId, user);
         var scope = liveScope(slotId, runId, false);
+        Db.require(Boolean.TRUE.equals(scope.assignment().get("activity_published")) || finishedRound(runId, user.id()),
+            NOT_FOUND, "This activity is unpublished");
         var current = new HashMap<>(attempt(runId, user.id()));
         current.put("alreadySubmitted", scope.assignment().get("max_points") != null && hasSubmission(scope.assignmentId(), user.id()));
         return current;
@@ -181,7 +204,10 @@ public class ActivityAttemptController {
     @GetMapping(LIVE + "/{runId}/picture")
     public Object livePicture(@PathVariable String slotId, @PathVariable String runId,
                               @AuthenticationPrincipal AuthService.User user) {
-        boards.access(slotId, user);
+        var slot = boards.access(slotId, user);
+        var scope = liveScope(slotId, runId, false);
+        Db.require(user.id().equals(slot.get("owner_id")) || Boolean.TRUE.equals(scope.assignment().get("activity_published"))
+            || finishedRound(runId, user.id()), NOT_FOUND, "This activity is unpublished");
         return db.one("""
             SELECT a.activity_image AS "image" FROM course_assignment a JOIN live_activity_run r ON r.assignment_id=a.id
             WHERE r.id=? AND r.slot_id=? AND a.activity_image IS NOT NULL
@@ -213,17 +239,24 @@ public class ActivityAttemptController {
 
     private Scope courseScope(long courseId, String id, boolean lock) {
         var row = db.one("""
-            SELECT id,activity_definition,max_points FROM course_assignment WHERE course_id=? AND id=? AND activity_definition IS NOT NULL
+            SELECT id,activity_definition,max_points,activity_published FROM course_assignment WHERE course_id=? AND id=? AND activity_definition IS NOT NULL
             """ + (lock ? " FOR UPDATE" : ""), courseId, id);
-        return new Scope(id, id, row, false);
+        return new Scope(id, id, row, !Boolean.TRUE.equals(row.get("activity_published")));
     }
 
     private Scope liveScope(String slotId, String runId, boolean lock) {
-        var run = db.one("SELECT assignment_id,ended_at,deadline_at FROM live_activity_run WHERE slot_id=? AND id=?" +
-            (lock ? " FOR UPDATE" : ""), slotId, runId);
+        String query = "SELECT assignment_id,ended_at,deadline_at FROM live_activity_run WHERE slot_id=? AND id=?";
+        var run = db.one(query, slotId, runId);
         String assignmentId = (String) run.get("assignment_id");
-        var row = db.one("SELECT activity_definition,max_points FROM course_assignment WHERE id=?", assignmentId);
-        return new Scope(runId, assignmentId, row, closed(run, System.currentTimeMillis()));
+        var row = db.one("SELECT activity_definition,max_points,activity_published FROM course_assignment WHERE id=?" +
+            (lock ? " FOR UPDATE" : ""), assignmentId);
+        if (lock) run = db.one(query + " FOR UPDATE", slotId, runId);
+        return new Scope(runId, assignmentId, row,
+            !Boolean.TRUE.equals(row.get("activity_published")) || closed(run, System.currentTimeMillis()));
+    }
+
+    private boolean finishedRound(String runId, String studentId) {
+        return db.exists("SELECT scope_id FROM activity_attempt WHERE scope_id=? AND student_id=? AND finished_at IS NOT NULL", runId, studentId);
     }
 
     private boolean closed(Map<String,Object> run, long now) {

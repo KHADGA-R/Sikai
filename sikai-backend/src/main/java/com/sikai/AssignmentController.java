@@ -118,11 +118,15 @@ public class AssignmentController {
             SELECT a.id,a.kind,a.title,a.instructions,a.due_at AS "dueAt",a.published_at AS "publishedAt",
                    a.lesson_id AS "lessonId",l.title AS "lessonTitle",f.file_name AS "fileName",a.max_points AS "maxPoints",
                    (a.activity_definition IS NOT NULL) AS "activity",
+                   a.activity_published AS "activityPublished",
                    CASE WHEN ? THEN (SELECT COUNT(*) FROM assignment_submission s WHERE s.assignment_id=a.id) ELSE 0 END AS "submissionCount"
             FROM course_assignment a LEFT JOIN course_asset f ON f.id=a.asset_id
             LEFT JOIN lesson l ON l.id=a.lesson_id
-            WHERE a.course_id=? ORDER BY a.published_at DESC,a.id
-            """, canPublish, courseId);
+            WHERE a.course_id=? AND (? OR a.activity_published
+                OR EXISTS (SELECT 1 FROM assignment_submission s WHERE s.assignment_id=a.id AND s.student_id=?)
+                OR EXISTS (SELECT 1 FROM activity_attempt t WHERE t.scope_id=a.id AND t.student_id=? AND t.finished_at IS NOT NULL))
+            ORDER BY a.published_at DESC,a.id
+            """, canPublish, courseId, canPublish, user.id(), user.id());
         var lessons = db.list("""
             SELECT l.id,l.title FROM lesson l JOIN topic t ON t.id=l.topic_id
             WHERE t.course_id=? ORDER BY t.position,l.position,l.id

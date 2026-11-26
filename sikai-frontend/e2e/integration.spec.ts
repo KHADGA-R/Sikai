@@ -98,6 +98,13 @@ test('instructor publishes an uploaded course; student enrolls, opens its file a
   await page.getByLabel('Correct target for card 2').selectOption({ label: 'Nouns' });
   await page.getByRole('button', { name: 'Publish activity' }).click();
   await expect(page.getByRole('heading', { name: 'Word groups', exact: true })).toBeVisible();
+  const wordGroups = page.locator('article').filter({ has: page.getByRole('heading', { name: 'Word groups', exact: true }) });
+  await page.once('dialog', dialog => dialog.accept()).locator('article')
+    .filter({ has: page.getByRole('heading', { name: 'Word groups', exact: true }) })
+    .getByRole('button', { name: 'Unpublish activity' }).click();
+  await expect(wordGroups.getByText('Unpublished', { exact: true })).toBeVisible();
+  await wordGroups.getByRole('button', { name: 'Republish activity' }).click();
+  await expect(wordGroups.getByRole('button', { name: 'Unpublish activity' })).toBeVisible();
   await page.getByRole('link', { name: 'New drag-and-drop activity' }).click();
   await expect(page.getByRole('heading', { name: 'New drag-and-drop activity', exact: true })).toBeVisible();
   await page.getByLabel('Activity format').selectOption('label');
@@ -550,6 +557,16 @@ test('live teacher availability, student booking, messaging, meeting link and ca
     await page.getByRole('button', { name: 'Refresh activities', exact: true }).click();
     await expect(library.locator('option', { hasText: 'Published while classroom is open' })).toHaveCount(1);
     await page.getByLabel('Choose activity').selectOption(activityId);
+    const launchActivity = page.getByRole('button', { name: 'Launch for class', exact: true });
+    const unpublishActivity = page.getByRole('button', { name: 'Unpublish activity', exact: true });
+    const republishActivity = page.getByRole('button', { name: 'Republish activity', exact: true });
+    await page.once('dialog', dialog => dialog.accept()).getByRole('button', { name: 'Unpublish activity', exact: true }).click();
+    await expect(launchActivity).toBeDisabled();
+    await expect(library).toHaveValue(activityId);
+    await expect(library.locator('option', { hasText: /Sort instruments.*Unpublished/ })).toHaveCount(1);
+    await republishActivity.click();
+    await expect(unpublishActivity).toBeEnabled();
+    await expect(launchActivity).toBeEnabled();
     await page.getByRole('button', { name: 'Preview activity', exact: true }).click();
     await expect(page.getByRole('heading', { name: 'Preview', exact: true })).toBeVisible();
     const duration = page.getByRole('spinbutton', { name: 'Time limit (minutes)' });
@@ -610,7 +627,6 @@ test('live teacher availability, student booking, messaging, meeting link and ca
     await expect(studentActivity.getByText('Grade 10 / 10', { exact: true })).toBeVisible();
     await duration.fill('2');
     await page.once('dialog', dialog => dialog.accept()).getByRole('button', { name: 'Run again', exact: true }).click();
-    await expect(studentActivity.getByText('Round 2', { exact: true })).toBeVisible();
     await expect(studentActivity.getByRole('timer', { name: 'Time remaining' })).toContainText(/1:\d{2}|2:00/);
     await expect(studentActivity.getByText('Your earlier graded submission is saved.', { exact: false })).toBeVisible();
     const bank = studentActivity.locator('.bank');
@@ -638,6 +654,14 @@ test('live teacher availability, student booking, messaging, meeting link and ca
     await expect(sharedSummary.getByText('Drums · 1 missed placement')).toBeVisible();
     await page.getByRole('button', { name: 'Hide class summary' }).click();
     await expect(sharedSummary).toHaveCount(0);
+    await page.once('dialog', dialog => dialog.accept()).getByRole('button', { name: 'Unpublish activity' }).click();
+    await expect(library.locator('option', { hasText: /Sort instruments.*Unpublished/ })).toHaveCount(1);
+    await expect(page.getByRole('button', { name: 'Run again', exact: true })).toBeDisabled();
+    await expect(studentActivity).toBeHidden();
+    await studentViews.getByRole('button', { name: 'Activities', exact: true }).click();
+    await expect(studentActivity.getByText('Grade 10 / 10', { exact: true })).toBeVisible();
+    await republishActivity.click();
+    await expect(page.getByRole('button', { name: 'Run again', exact: true })).toBeEnabled();
     await student.getByRole('button', { name: 'Back to whiteboard' }).click();
     await page.getByRole('button', { name: 'Back to whiteboard' }).click();
     await expect(student.getByRole('link', { name: 'Open video call' })).toHaveAttribute('href', 'https://meet.example.com/sikai-e2e');

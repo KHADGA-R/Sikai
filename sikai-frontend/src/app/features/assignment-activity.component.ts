@@ -112,7 +112,7 @@ interface PublishedActivity extends Activity { title: string; instructions: stri
         <h1>{{ activity.title }}</h1>
         @if (activity.instructions) { <p class="instructions">{{ activity.instructions }}</p> }
         <app-assignment-activity-player [activity]="activity" [resource]="attemptResource()"
-          [readonlyMode]="!!submissionId" [display]="activity.placements ?? null" />
+          [closed]="!!activity.unpublished" [readonlyMode]="!!submissionId" [display]="activity.placements ?? null" />
       } @else if (!error()) {
         <p role="status">Loading activity…</p>
       }

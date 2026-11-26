@@ -11,6 +11,7 @@ export interface Activity {
   graded?: boolean;
   image?: string;
   imageAlt?: string;
+  unpublished?: boolean;
 }
 export interface Placement { cardId: number; targetId: number; }
 interface AttemptState { placements: Placement[]; revision: number; finished: boolean; alreadySubmitted?: boolean; }

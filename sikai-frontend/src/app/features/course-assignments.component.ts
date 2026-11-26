@@ -19,6 +19,7 @@ interface Assignment {
   maxPoints: number | null;
   submissionCount: number;
   activity: boolean;
+  activityPublished: boolean;
 }
 interface AssignmentsPage {
   courseTitle: string;
@@ -90,6 +91,7 @@ interface AssignmentsPage {
               @if (assignment.instructions) { <p class="instructions">{{ assignment.instructions }}</p> }
             </div>
             <div class="assignment-facts">
+              @if (assignment.activity && !assignment.activityPublished) { <p><strong>Unpublished</strong></p> }
               <p>{{ assignment.dueAt == null ? 'No deadline' : 'Due ' + (assignment.dueAt | date:'medium') }}</p>
               <p>{{ assignment.maxPoints == null ? 'Ungraded' : assignment.maxPoints + ' points' }}</p>
               @if (assignment.activity && assignment.maxPoints == null) { <p>Drag-and-drop practice</p> }
@@ -97,6 +99,12 @@ interface AssignmentsPage {
             </div>
             <div class="assignment-actions">
             @if (assignment.activity) {
+              @if (course.canPublish) {
+                <button type="button" class="button outline" [disabled]="!!changingPublication()"
+                  (click)="setActivityPublication(assignment)">
+                  {{ assignment.activityPublished ? 'Unpublish activity' : 'Republish activity' }}
+                </button>
+              }
               <a class="button outline" [routerLink]="['/courses', courseId(), 'assignments', assignment.id, 'activity']"
                  [queryParams]="{kind: kindFilter() || null, lesson: lessonFilter() || null}">Open activity</a>
               @if (course.canPublish && assignment.maxPoints != null) {
@@ -152,6 +160,7 @@ export class CourseAssignmentsComponent {
   readonly publishing = signal(false);
   readonly downloading = signal('');
   readonly error = signal('');
+  readonly changingPublication = signal('');
   readonly message = signal('');
   readonly lessonFilter = computed(() => this.query().get('lesson') ?? '');
   readonly kindFilter = computed(() => this.query().get('kind') ?? '');
@@ -251,6 +260,21 @@ export class CourseAssignmentsComponent {
     } finally {
       this.downloading.set('');
     }
+  }
+
+  async setActivityPublication(assignment: Assignment): Promise<void> {
+    if (this.changingPublication()) return;
+    const published = !assignment.activityPublished;
+    if (!published && !window.confirm('Unpublish this activity and close any open rounds? Saved work and grades will be preserved.')) return;
+    this.changingPublication.set(assignment.id);
+    this.error.set('');
+    const courseId = this.courseId();
+    try {
+      await this.api.request('PATCH', this.path(courseId) + '/' + encodeURIComponent(assignment.id) + '/activity/publication', { published });
+      if (this.courseId() === courseId) await this.load(courseId);
+    } catch (error) {
+      if (this.courseId() === courseId) this.error.set(this.errorMessage(error));
+    } finally { this.changingPublication.set(''); }
   }
 
   private errorMessage(error: unknown): string {

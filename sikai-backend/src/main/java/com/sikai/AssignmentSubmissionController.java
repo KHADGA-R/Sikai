@@ -47,7 +47,9 @@ public class AssignmentSubmissionController {
             LEFT JOIN assignment_workspace w ON w.assignment_id=a.id AND w.student_id=e.user_id
             LEFT JOIN assignment_submission s ON s.assignment_id=a.id AND s.student_id=e.user_id
             LEFT JOIN course_asset sf ON sf.id=s.asset_id
-            WHERE e.user_id=? AND c.published=TRUE ORDER BY a.published_at DESC,a.id
+            WHERE e.user_id=? AND c.published=TRUE AND (a.activity_published OR s.student_id IS NOT NULL
+                OR EXISTS (SELECT 1 FROM activity_attempt t WHERE t.scope_id=a.id AND t.student_id=e.user_id AND t.finished_at IS NOT NULL))
+            ORDER BY a.published_at DESC,a.id
             """, user.id());
     }
 
