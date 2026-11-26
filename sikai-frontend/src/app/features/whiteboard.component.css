@@ -4,8 +4,7 @@
 .whiteboard { width: min(1500px, calc(100% - 32px)); }
 .board-layout, .board-workspace { display: grid; gap: 10px; align-items: start; min-width: 0; }
 .board-layout { grid-template-columns: minmax(0, 1fr); }
-.board-workspace { grid-template-columns: minmax(112px, 19%) minmax(0, 1fr); padding: 14px; }
-.board-workspace.slides-collapsed { grid-template-columns: minmax(0, 1fr); }
+.board-workspace { container-type: inline-size; grid-template-columns: minmax(0, 1fr); padding: 14px; }
 .board-workspace[hidden], .slides[hidden], .board-sidebar[hidden] { display: none; }
 .camera-first app-classroom-video { grid-row: 1; }
 .split-view { grid-template-columns: minmax(0, var(--board-width)) 12px minmax(0, 1fr); gap: 5px; }
@@ -28,6 +27,10 @@
 .calculator-toggle app-theme-icon { width: 15px; height: 15px; }
 .video-status { margin-bottom: 10px; }
 .board-sidebar { display: grid; gap: 8px; min-width: 0; }
+.board-sidebar.drawer-only { display: contents; }
+.board-content { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; min-width: 0; position: relative; }
+.board-content.sidebar-open { grid-template-columns: minmax(112px, 19%) minmax(0, 1fr); }
+.board-content.maths-open { grid-template-columns: minmax(150px, 23%) minmax(0, 1fr); }
 .maths-sidebar { min-width: 0; padding: 7px; border: 1px solid #d6e3db; border-radius: 8px; background: #f8faf8; color: #000; }
 .maths-heading { display: flex; align-items: center; justify-content: space-between; }
 .maths-heading h2 { margin: 0; font-size: .9rem; }
@@ -36,7 +39,6 @@
 .maths-sidebar details button { width: 100%; }
 .maths-sidebar button:hover, .maths-sidebar button:focus-visible { background: #e7f1eb; }
 .maths-sidebar app-theme-icon { width: 16px; height: 16px; }
-.board-workspace.maths-open { grid-template-columns: minmax(150px, 23%) minmax(0, 1fr); }
 .maths-categories { max-height: min(360px, 45dvh); overflow-y: auto; }
 .maths-sidebar details { border-block-end: 1px solid #dce8e0; }
 .maths-sidebar .math-chart-choices { margin-inline-start: 8px; border: 0; }
@@ -50,7 +52,10 @@
 .early-maths button { display: grid; justify-items: center; align-content: center; gap: 3px; min-height: 64px;
   border: 1px solid #c4d8cf; background: #fff; text-align: center; font-weight: 700; overflow-wrap: anywhere; }
 .early-maths app-theme-icon { width: 27px; height: 27px; color: #175a50; }
-.slides { min-width: 0; padding: 8px; border: 1px solid #e1eae4; border-radius: 8px; background: #f8faf8; }
+.slides { position: absolute; top: 0; inset-inline-start: 0; z-index: 5; width: min(230px, 90%); max-height: 65dvh; overflow-y: auto;
+  padding: 8px; border: 1px solid #c8d9d1; border-radius: 8px; background: #f8faf8; box-shadow: 0 6px 20px #153c3226; }
+.drawer-heading { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+.drawer-heading button { min-height: 27px; min-width: 27px; color: #173c3d; background: #fff; border: 1px solid #c8d9d1; border-radius: 5px; }
 .workspace { min-width: 0; }
 .slides h2 { font-size: 1rem; margin-bottom: 10px; }
 .slides nav, .slide-editor { display: grid; gap: 6px; }
@@ -89,12 +94,24 @@
 .tip-sample { display: inline-block; width: var(--tip-size); height: var(--tip-size); border-radius: 50%; background: currentColor; }
 .undo { margin-inline-start: auto; }
 .surface { position: relative; container-type: inline-size; aspect-ratio: 1000 / 562; background: #fff; border: 1px solid #d5e0da; border-radius: 10px; overflow: hidden; }
-.activity-layout { display: grid; gap: 0; }
-.activity-layout.activities-open { gap: 10px; align-items: start; }
-@container (min-width: 780px) {
-  .activity-layout.activities-open { grid-template-columns: minmax(0, 1fr) minmax(280px, 36%); }
+.activity-views { display: inline-flex; flex-wrap: wrap; gap: 3px; padding: 3px; background: #f1f6f2; border: 1px solid #d6e3db; border-radius: 7px; }
+.activity-views button { min-height: 30px; border: 1px solid transparent; border-radius: 5px; background: transparent; color: #173c3d; }
+.activity-views button:is([aria-pressed=true], [aria-expanded=true]) { background: #fff; border-color: #c7dbd1; font-weight: 650; }
+.activity-views .activity-split-view, .activity-divider { display: none; }
+.activity-layout { display: grid; grid-template-columns: minmax(0, 1fr); }
+.activity-layout.activities-open > .board-content,
+.activity-layout:not(.activities-open) > app-live-class-activities { display: none; }
+@container (min-width: 960px) {
+  .activity-views .activity-split-view { display: inline-block; }
+  .activity-views button[aria-expanded=true]:not(.activity-selected) { background: transparent; border-color: transparent; font-weight: inherit; }
+  .activity-layout.activities-open:not(.activity-focus) {
+    grid-template-columns: minmax(0, var(--activity-board-share)) 12px minmax(260px, var(--activity-panel-share));
+    align-items: start; gap: 8px;
+  }
+  .activity-layout.activities-open:not(.activity-focus) > .board-content { display: grid; }
+  .activity-layout.activities-open:not(.activity-focus) > .activity-divider { display: block; }
+  .activity-layout.activities-open:not(.activity-focus) > app-live-class-activities { max-height: min(72dvh, 720px); overflow: auto; }
 }
-.workspace { container-type: inline-size; }
 .surface:has(.live-answer-editor) { overflow: visible; }
 .font-size-stepper { align-items: stretch; gap: 0; padding: 0; flex-shrink: 0; }
 .font-size-stepper button { min-width: 32px; min-height: 32px; padding: 0 5px; border: 0; border-radius: 6px; background: transparent; color: inherit; font-weight: 650; }
@@ -127,7 +144,7 @@
 .tool-note { font-size: .85rem; margin: 0 0 10px; }
 .board-note { font-size: .85rem; color: #4c6461; margin: 10px 0 0; }
 @media (max-width: 760px) {
-  .board-workspace, .board-workspace.maths-open { grid-template-columns: minmax(0, 1fr); }
+  .board-content.sidebar-open, .board-content.maths-open { grid-template-columns: minmax(0, 1fr); }
   .slides nav { grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); }
   .undo { margin-inline-start: 0; }
 }

@@ -34,21 +34,27 @@ interface LibraryItem { id: string; title: string; courseTitle: string; }
   template: `
       <aside class="panel activity-panel" aria-label="Class activities" [hidden]="!open()">
         <div class="heading"><h2>Class activities</h2>
-          <button type="button" aria-label="Hide class activities" (click)="open.set(false)">×</button>
+          <button type="button" (click)="setOpen(false)">Back to whiteboard</button>
         </div>
         @if (teacher()) {
           <label>Activity
             <select aria-label="Choose activity" [value]="choice()" (change)="select($any($event.target).value)">
-              <option value="">Choose Match or Sort</option>
+              <option value="">Choose an activity</option>
               @for (item of library(); track item.id) { <option [value]="item.id">{{ item.title }} · {{ item.courseTitle }}</option> }
             </select>
           </label>
+          <button type="button" [disabled]="libraryLoading()" (click)="loadLibrary()">
+            {{ libraryLoading() ? 'Refreshing activities…' : 'Refresh activities' }}
+          </button>
           <label>Time limit (minutes)
             <input type="number" aria-label="Time limit (minutes)" min="1" max="120" step="1" placeholder="No time limit"
                    [value]="duration()" [disabled]="busy()" (input)="duration.set($any($event.target).value)" />
           </label>
           @if (!validDuration()) { <p class="error-note">Enter a whole number from 1 to 120 minutes.</p> }
-          @if (libraryLoaded() && !library().length) { <p>Publish a Match or Sort activity in one of your courses first.</p> }
+          @if (libraryError()) { <p class="error-note" role="alert">{{ libraryError() }}</p> }
+          @else if (libraryLoaded() && !library().length) {
+            <p>No activities found. Use this teacher account to publish a drag-and-drop activity in a published course.</p>
+          }
           <div class="heading">
             <button type="button" [disabled]="busy() || !choice()" (click)="loadPreview()">Preview activity</button>
             @if (choice() !== run()?.assignmentId) {
@@ -193,6 +199,8 @@ export class LiveClassActivitiesComponent {
   });
   readonly library = signal<LibraryItem[]>([]);
   readonly libraryLoaded = signal(false);
+  readonly libraryLoading = signal(false);
+  readonly libraryError = signal('');
   readonly choice = signal('');
   readonly duration = signal('');
   readonly validDuration = computed(() => {
@@ -226,14 +234,21 @@ export class LiveClassActivitiesComponent {
     });
     const interval = window.setInterval(() => { if (!document.hidden && !this.busy()) void this.refresh(); }, 2200);
     const clock = window.setInterval(() => { if (this.timerEnds() != null) this.timerNow.set(performance.now()); }, 250);
-    this.destroy.onDestroy(() => { this.stopped = true; window.clearInterval(interval); window.clearInterval(clock); });
+    const refreshOnFocus = () => { if (this.open() && this.teacher()) void this.loadLibrary(); };
+    window.addEventListener('focus', refreshOnFocus);
+    this.destroy.onDestroy(() => {
+      this.stopped = true;
+      window.clearInterval(interval);
+      window.clearInterval(clock);
+      window.removeEventListener('focus', refreshOnFocus);
+    });
   }
 
   path(): string { return '/live-classes/slots/' + encodeURIComponent(this.slotId()) + '/activities'; }
 
-  toggle(): void {
-    this.open.set(!this.open());
-    if (this.open() && this.teacher() && !this.libraryLoaded()) void this.loadLibrary();
+  setOpen(open: boolean): void {
+    this.open.set(open);
+    if (open && this.teacher()) void this.loadLibrary();
   }
 
   select(id: string): void { this.choice.set(id); this.preview.set(null); }
@@ -250,11 +265,19 @@ export class LiveClassActivitiesComponent {
     finally { this.busy.set(false); }
   }
 
-  private async loadLibrary(): Promise<void> {
+  async loadLibrary(): Promise<void> {
+    if (!this.teacher() || this.libraryLoading() || this.stopped) return;
+    this.libraryLoading.set(true);
+    this.libraryError.set('');
     try {
-      this.library.set(await this.api.request<LibraryItem[]>('GET', this.path() + '/library'));
+      const items = await this.api.request<LibraryItem[]>('GET', this.path() + '/library');
+      if (this.stopped) return;
+      this.library.set(items);
+      if (!items.some(item => item.id === this.choice())) this.select('');
       this.libraryLoaded.set(true);
-    } catch (error) { this.showError(error); }
+    } catch (error) {
+      if (!this.stopped) this.libraryError.set(error instanceof Error ? error.message : 'Unable to refresh the activity list.');
+    } finally { this.libraryLoading.set(false); }
   }
 
   private async refresh(): Promise<void> {
@@ -271,6 +294,11 @@ export class LiveClassActivitiesComponent {
       if (previous?.runId === state.runId) {
         this.run.set({ ...state, activity: previous.activity, solution: previous.solution ?? state.solution });
       } else {
+        if (state.activity.mode === 'label') {
+          const { image } = await this.api.request<{ image: string }>('GET', this.path() + '/' + state.runId + '/picture');
+          if (this.stopped) return;
+          state.activity = { ...state.activity, image };
+        }
         this.run.set(state);
         this.inspection.set(null);
       }

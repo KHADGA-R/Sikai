@@ -5,6 +5,7 @@ if (process.env.LIVEKIT_URL) {
 }
 
 const password = 'IntegrationPass123!';
+const activityPicture = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAABAAAAAJCAAAAAAeQfPuAAAAEklEQVR4nGO4BAUfoIBhkAgAALMMfpF8HAEiAAAAAElFTkSuQmCC', 'base64');
 
 function practicePdf(): Buffer {
   const objects = [
@@ -79,6 +80,7 @@ test('instructor publishes an uploaded course; student enrolls, opens its file a
   await page.getByRole('button', { name: 'Publish assignment', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Practice upload' })).toBeVisible();
   await page.getByRole('link', { name: 'New drag-and-drop activity' }).click();
+  await expect(page.getByRole('heading', { name: 'New drag-and-drop activity', exact: true })).toBeVisible();
   await page.getByLabel('Title', { exact: true }).fill('Word groups');
   await page.getByLabel('Prompt 1', { exact: true }).fill('Nouns');
   await page.getByLabel('Prompt 2', { exact: true }).fill('Verbs');
@@ -96,6 +98,29 @@ test('instructor publishes an uploaded course; student enrolls, opens its file a
   await page.getByLabel('Correct target for card 2').selectOption({ label: 'Nouns' });
   await page.getByRole('button', { name: 'Publish activity' }).click();
   await expect(page.getByRole('heading', { name: 'Word groups', exact: true })).toBeVisible();
+  await page.getByRole('link', { name: 'New drag-and-drop activity' }).click();
+  await expect(page.getByRole('heading', { name: 'New drag-and-drop activity', exact: true })).toBeVisible();
+  await page.getByLabel('Activity format').selectOption('label');
+  await page.getByLabel('Title', { exact: true }).fill('Label the diagram');
+  await page.getByRole('button', { name: 'Position target 1' }).click();
+  await expect(page.getByText('Upload a picture to place your selected target.')).toBeVisible();
+  await page.locator('input[type="file"]').setInputFiles({ name: 'diagram.png', mimeType: 'application/octet-stream', buffer: activityPicture });
+  await page.getByLabel('Picture description').fill('A practice diagram');
+  await page.getByLabel('Target 1', { exact: true }).fill('Left marker');
+  await page.getByLabel('Target 2', { exact: true }).fill('Right marker');
+  await page.getByRole('button', { name: 'Position target 1' }).click();
+  const pictureEditor = page.getByRole('group', { name: 'Position target on picture' });
+  await pictureEditor.click({ position: { x: 120, y: 140 } });
+  await page.getByRole('button', { name: 'Position target 2' }).click();
+  await pictureEditor.click({ position: { x: 420, y: 140 } });
+  await page.getByLabel('Card 1', { exact: true }).fill('Stem');
+  await page.getByLabel('Card 2', { exact: true }).fill('Leaf');
+  await page.getByLabel('Correct target for card 1').selectOption({ label: 'Left marker' });
+  await page.getByLabel('Correct target for card 2').selectOption({ label: 'Right marker' });
+  await page.getByRole('button', { name: 'Preview as student' }).click();
+  await expect(page.locator('.preview .picture-pin')).toHaveCount(2);
+  await page.getByRole('button', { name: 'Publish activity' }).click();
+  await expect(page.getByRole('heading', { name: 'Label the diagram', exact: true })).toBeVisible();
 
   const context = await browser.newContext();
   const student = await context.newPage();
@@ -318,6 +343,17 @@ test('instructor publishes an uploaded course; student enrolls, opens its file a
     await expect(student).toHaveURL(/lesson=\d+.*status=pending/);
     await student.getByRole('link', { name: 'View all assignments', exact: true }).click();
     await expect(student.getByRole('heading', { name: 'My Assignments' })).toBeVisible();
+    const pictureCard = student.locator('article').filter({ has: student.getByRole('heading', { name: 'Label the diagram' }) });
+    await pictureCard.getByRole('link', { name: 'Open activity' }).click();
+    await expect(student.getByRole('img', { name: 'A practice diagram' })).toBeVisible();
+    await student.getByRole('button', { name: 'Stem', exact: true }).click();
+    await student.getByRole('button', { name: 'Place in Left marker' }).click();
+    const leftPin = student.locator('.picture-pin').filter({ has: student.getByRole('button', { name: 'Place in Left marker' }) });
+    await expect(leftPin.getByRole('button', { name: 'Stem', exact: true })).toBeVisible();
+    await expect(student.getByText('Progress saved', { exact: true })).toBeVisible();
+    await student.reload();
+    await expect(leftPin.getByRole('button', { name: 'Stem', exact: true })).toBeVisible();
+    await student.getByRole('link', { name: 'Back to assignments' }).click();
     const activityCard = student.locator('article').filter({ has: student.getByRole('heading', { name: 'Word groups' }) });
     await activityCard.getByRole('link', { name: 'Open activity' }).click();
     await student.getByRole('button', { name: 'Dog', exact: true }).press('Enter');
@@ -443,7 +479,9 @@ test('live teacher availability, student booking, messaging, meeting link and ca
   const liveCourse = await course.json();
   const activity = await page.request.post('/api/courses/' + liveCourse.id + '/assignments/activities', { headers: teacherHeaders, data: {
     assignment: { title: 'Sort instruments', instructions: 'Place each instrument.', kind: 'classwork', maxPoints: 10 },
-    activity: { mode: 'sort', targets: [{ id: 1, label: 'Drums' }, { id: 2, label: 'Strings' }],
+    image: 'data:image/png;base64,' + activityPicture.toString('base64'),
+    activity: { mode: 'label', imageAlt: 'Music practice diagram',
+      targets: [{ id: 1, label: 'Drums', x: .25, y: .4 }, { id: 2, label: 'Strings', x: .75, y: .4 }],
       cards: [{ id: 1, label: 'Madal', targetId: 1 }, { id: 2, label: 'Guitar', targetId: 2 }] },
   } });
   expect(activity.ok()).toBeTruthy();
@@ -499,6 +537,18 @@ test('live teacher availability, student booking, messaging, meeting link and ca
     await booking.getByRole('link', { name: 'Open whiteboard' }).click();
     await expect(student.getByRole('heading', { name: 'Class whiteboard' })).toBeVisible();
     await page.getByRole('button', { name: 'Activities', exact: true }).click();
+    const library = page.getByLabel('Choose activity');
+    await expect(library.locator('option', { hasText: 'Sort instruments' })).toHaveCount(1);
+    const newActivity = await page.request.post('/api/courses/' + liveCourse.id + '/assignments/activities', {
+      headers: teacherHeaders, data: {
+        assignment: { title: 'Published while classroom is open', instructions: '', kind: 'classwork' },
+        activity: { mode: 'match', targets: [{ id: 1, label: 'One' }, { id: 2, label: 'Two' }],
+          cards: [{ id: 1, label: '1', targetId: 1 }, { id: 2, label: '2', targetId: 2 }] },
+      },
+    });
+    expect(newActivity.ok()).toBeTruthy();
+    await page.getByRole('button', { name: 'Refresh activities', exact: true }).click();
+    await expect(library.locator('option', { hasText: 'Published while classroom is open' })).toHaveCount(1);
     await page.getByLabel('Choose activity').selectOption(activityId);
     await page.getByRole('button', { name: 'Preview activity', exact: true }).click();
     await expect(page.getByRole('heading', { name: 'Preview', exact: true })).toBeVisible();
@@ -508,13 +558,37 @@ test('live teacher availability, student booking, messaging, meeting link and ca
     await duration.fill('5');
     await page.getByRole('button', { name: 'Launch for class' }).click();
     const studentActivity = student.getByRole('complementary', { name: 'Class activities' });
+    await expect(studentActivity.getByRole('img', { name: 'Music practice diagram' })).toBeVisible();
     await expect(page.getByRole('timer', { name: 'Time remaining' })).toContainText(/(?:4:\d{2}|5:00)/);
     await expect(studentActivity.getByRole('timer', { name: 'Time remaining' })).toContainText(/4:\d{2}|5:00/);
+    const teacherViews = page.getByRole('group', { name: 'Whiteboard and activity view' });
+    await teacherViews.getByRole('button', { name: 'Split', exact: true }).click();
+    const activityDivider = page.getByRole('separator', { name: 'Resize whiteboard and activities' });
+    const splitBoard = page.locator('.board-content');
+    const splitActivities = page.getByRole('complementary', { name: 'Class activities' });
+    await expect(activityDivider).toBeVisible();
+    const initialWidth = (await splitBoard.boundingBox())!.width;
+    expect(Math.abs((await splitBoard.boundingBox())!.y - (await splitActivities.boundingBox())!.y)).toBeLessThan(2);
+    await activityDivider.press('ArrowLeft');
+    expect((await splitBoard.boundingBox())!.width).toBeLessThan(initialWidth);
+    await teacherViews.getByRole('button', { name: 'Activities', exact: true }).click();
+    await expect(splitBoard).toBeHidden();
+    const wideStudent = student.viewportSize()!;
+    await student.setViewportSize({ width: 768, height: wideStudent.height });
+    const studentViews = student.getByRole('group', { name: 'Whiteboard and activity view' });
+    await expect(studentViews.getByRole('button', { name: 'Split', exact: true })).toBeHidden();
+    await expect(student.locator('.surface')).toBeHidden();
+    await expect(studentActivity).toBeVisible();
+    await studentViews.getByRole('button', { name: 'Whiteboard', exact: true }).click();
+    await expect(student.locator('.surface')).toBeVisible();
+    await studentViews.getByRole('button', { name: 'Activities', exact: true }).click();
+    await student.setViewportSize(wideStudent);
     await studentActivity.getByRole('button', { name: 'Madal', exact: true }).click();
     await studentActivity.getByRole('button', { name: 'Place in Drums' }).click();
     await expect(studentActivity.getByText('Progress saved', { exact: true })).toBeVisible();
     await student.reload();
-    await expect(studentActivity.locator('.target').filter({ hasText: 'Drums' }).getByRole('button', { name: 'Madal', exact: true })).toBeVisible();
+    await expect(studentActivity.locator('.target').filter({ has: student.getByRole('button', { name: 'Place in Drums' }) })
+      .getByRole('button', { name: 'Madal', exact: true })).toBeVisible();
     await expect(page.getByText('Working', { exact: true })).toBeVisible();
     await page.getByRole('button', { name: 'View work' }).click();
     await expect(page.getByRole('heading', { name: /’s work/ })).toBeVisible();
@@ -564,8 +638,8 @@ test('live teacher availability, student booking, messaging, meeting link and ca
     await expect(sharedSummary.getByText('Drums · 1 missed placement')).toBeVisible();
     await page.getByRole('button', { name: 'Hide class summary' }).click();
     await expect(sharedSummary).toHaveCount(0);
-    await student.getByRole('button', { name: 'Hide class activities' }).click();
-    await page.getByRole('button', { name: 'Hide class activities' }).click();
+    await student.getByRole('button', { name: 'Back to whiteboard' }).click();
+    await page.getByRole('button', { name: 'Back to whiteboard' }).click();
     await expect(student.getByRole('link', { name: 'Open video call' })).toHaveAttribute('href', 'https://meet.example.com/sikai-e2e');
     await student.getByRole('button', { name: 'Calculator', exact: true }).click();
     const calculator = student.locator('app-whiteboard-calculator');
@@ -612,15 +686,21 @@ test('live teacher availability, student booking, messaging, meeting link and ca
     await teacherCalculator.getByRole('button', { name: 'Sharing live' }).click();
     await expect(sharedCalculation).toHaveCount(0);
     await teacherCalculator.getByRole('button', { name: 'Close calculator' }).click();
+    const beforeSlides = (await page.locator('.surface').boundingBox())!.width;
+    await page.getByRole('button', { name: 'Show slides', exact: true }).click();
+    expect((await page.locator('.surface').boundingBox())!.width).toBeCloseTo(beforeSlides);
     await page.getByLabel('Slide title').fill('Rhythm notes');
     await page.locator('input[type=file]').setInputFiles({
       name: 'rhythm.png',
       mimeType: 'image/png',
       buffer: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=', 'base64'),
     });
+    await student.getByRole('button', { name: 'Show slides', exact: true }).click();
     await student.getByRole('button', { name: 'Rhythm notes' }).click();
+    await student.getByRole('button', { name: 'Close slides drawer' }).click();
     await expect(student.getByRole('img', { name: 'Rhythm notes', exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Upload slide image' })).toBeEnabled();
+    await page.getByRole('button', { name: 'Close slides drawer' }).click();
     await page.getByRole('button', { name: 'Highlighter' }).click();
     await page.locator('.surface svg').click({ position: { x: 45, y: 40 } });
     await expect(student.locator('.surface [data-tool=highlighter]')).toHaveCount(1);

@@ -113,7 +113,7 @@ public class AssignmentSubmissionController {
                                     @AuthenticationPrincipal AuthService.User user) throws Exception {
         var submission = submission(courseId, id, studentId, user);
         var assignment = db.one("""
-            SELECT title,instructions,activity_definition,max_points FROM course_assignment
+            SELECT title,instructions,activity_definition,max_points,activity_image FROM course_assignment
             WHERE course_id=? AND id=? AND activity_definition IS NOT NULL
             """, courseId, id);
         var definition = json.readValue((String) assignment.get("activity_definition"), AssignmentActivityController.Definition.class);

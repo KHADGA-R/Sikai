@@ -31,12 +31,18 @@
     <div #classroomLayout class="board-layout" [class.split-view]="videoOpen() && classroomView() === 'split'"
       [class.camera-first]="videoOpen() && classroomView() === 'whiteboard'" [style.--board-width]="boardShare() + '%'">
       @if (whiteboardOpen()) {
-      <section class="panel board-workspace" [class.slides-collapsed]="!boardSidebarOpen()" [class.maths-open]="mathsOpen()"
+      <section class="panel board-workspace"
         [hidden]="videoOpen() && classroomView() === 'presentation'">
       <div class="whiteboard-panel-heading">
         <h2>Whiteboard</h2>
         <div class="board-panel-actions">
-          <button type="button" class="slides-toggle" [attr.aria-expanded]="activities.open()" (click)="activities.toggle()">Activities</button>
+          <div class="activity-views" role="group" aria-label="Whiteboard and activity view">
+            <button type="button" [attr.aria-pressed]="!activities.open()" (click)="activities.setOpen(false)">Whiteboard</button>
+            <button type="button" class="activity-split-view" [attr.aria-pressed]="activities.open() && activityView() === 'split'"
+              (click)="activityView.set('split'); activities.setOpen(true)">Split</button>
+            <button type="button" [attr.aria-expanded]="activities.open()" [class.activity-selected]="activityView() === 'activity' && activities.open()"
+              (click)="activityView.set('activity'); activities.setOpen(true)">Activities</button>
+          </div>
           <button type="button" class="slides-toggle calculator-toggle" [attr.aria-expanded]="calculatorOpen()"
             (click)="calculatorMode.set('standard'); calculatorOpen.set(!calculatorOpen())">
             <app-theme-icon name="calculator" /> Calculator
@@ -46,7 +52,12 @@
           </button>
         </div>
       </div>
-      <div class="board-sidebar" [hidden]="!boardSidebarOpen()">
+      <div #activityLayout class="activity-layout" [class.activities-open]="activities.open()"
+        [class.activity-focus]="activityView() === 'activity'"
+        [style.--activity-board-share]="activityBoardShare() + 'fr'"
+        [style.--activity-panel-share]="(100 - activityBoardShare()) + 'fr'">
+      <div class="board-content" [class.sidebar-open]="boardSidebarOpen()" [class.maths-open]="mathsOpen()">
+      <div class="board-sidebar" [class.drawer-only]="!boardSidebarOpen()">
       @if (mathsOpen()) {
         <aside class="maths-sidebar" aria-label="Maths tools">
           <div class="maths-heading">
@@ -106,7 +117,9 @@
         </aside>
       }
       <aside class="slides" [hidden]="!slidesOpen()">
-        <h2>Slides</h2>
+        <div class="drawer-heading"><h2>Slides</h2>
+          <button type="button" aria-label="Close slides drawer" (click)="slidesOpen.set(false)">×</button>
+        </div>
         <nav aria-label="Whiteboard slides">
           @for (slide of slides(); track slide.id) {
             <button type="button" [attr.aria-current]="selected().id === slide.id ? 'page' : null"
@@ -248,7 +261,6 @@
         @if (activeShape() === 'circle') {
           <p class="tool-note">Drag from the center to the edge to draw a circle.</p>
         }
-        <div class="activity-layout" [class.activities-open]="activities.open()">
         <div class="surface">
           @if (image(); as background) { <img [src]="background" [alt]="selected().title" /> }
           <svg #surface viewBox="0 0 1000 562" preserveAspectRatio="none" [class.erasing]="tool() === 'eraser'"
@@ -345,9 +357,18 @@
               (changed)="changeNote(note.id, $event)" (removed)="deleteNote(note.id)" />
           }
         </div>
-        <app-live-class-activities #activities [slotId]="slotId" [teacher]="room.instructor" />
-        </div>
         <p class="board-note">Marks are shared with the class. Use Show marks to isolate a participant’s annotations.</p>
+      </div>
+      </div>
+      @if (activities.open() && activityView() === 'split') {
+        <div #activityDivider class="split-divider activity-divider" role="separator" tabindex="0"
+          aria-label="Resize whiteboard and activities" aria-orientation="vertical" aria-valuemin="43" aria-valuemax="72"
+          [attr.aria-valuenow]="activityBoardShare()" (keydown)="keyboardActivityResize($event)"
+          (pointerdown)="startActivityResize($event, activityDivider)" (pointermove)="resizeActivity($event, activityLayout)"
+          (pointerup)="stopActivityResize($event)" (pointercancel)="stopActivityResize($event)"
+          (lostpointercapture)="stopActivityResize($event)"></div>
+      }
+      <app-live-class-activities #activities [slotId]="slotId" [teacher]="room.instructor" />
       </div>
       </section>
       }

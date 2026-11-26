@@ -152,7 +152,7 @@ public class ActivityAttemptController {
                           @AuthenticationPrincipal AuthService.User user) throws Exception {
         requireTeacher(slotId, user);
         var row = db.one("""
-            SELECT a.title,a.instructions,a.activity_definition,a.max_points FROM course_assignment a JOIN course c ON c.id=a.course_id
+            SELECT a.title,a.instructions,a.activity_definition,a.max_points,a.activity_image FROM course_assignment a JOIN course c ON c.id=a.course_id
             WHERE a.id=? AND c.owner_id=? AND c.published=TRUE AND a.activity_definition IS NOT NULL
             """, assignmentId, user.id());
         return AssignmentActivityController.playable(row, definition(row));
@@ -176,6 +176,16 @@ public class ActivityAttemptController {
         var current = new HashMap<>(attempt(runId, user.id()));
         current.put("alreadySubmitted", scope.assignment().get("max_points") != null && hasSubmission(scope.assignmentId(), user.id()));
         return current;
+    }
+
+    @GetMapping(LIVE + "/{runId}/picture")
+    public Object livePicture(@PathVariable String slotId, @PathVariable String runId,
+                              @AuthenticationPrincipal AuthService.User user) {
+        boards.access(slotId, user);
+        return db.one("""
+            SELECT a.activity_image AS "image" FROM course_assignment a JOIN live_activity_run r ON r.assignment_id=a.id
+            WHERE r.id=? AND r.slot_id=? AND a.activity_image IS NOT NULL
+            """, runId, slotId);
     }
 
     @PutMapping(LIVE + "/{runId}/attempt")

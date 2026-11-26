@@ -1,12 +1,16 @@
 import { Component, OnDestroy, computed, effect, inject, input, signal } from '@angular/core';
+import { NgTemplateOutlet } from '@angular/common';
 import { ApiService } from '../core/api.service';
 
 export interface ActivityTile { id: number; label: string; }
+export interface ActivityTarget extends ActivityTile { x?: number; y?: number; }
 export interface Activity {
-  mode: 'match' | 'sort';
-  targets: ActivityTile[];
+  mode: 'match' | 'sort' | 'label';
+  targets: ActivityTarget[];
   cards: ActivityTile[];
   graded?: boolean;
+  image?: string;
+  imageAlt?: string;
 }
 export interface Placement { cardId: number; targetId: number; }
 interface AttemptState { placements: Placement[]; revision: number; finished: boolean; alreadySubmitted?: boolean; }
@@ -14,6 +18,7 @@ interface AttemptState { placements: Placement[]; revision: number; finished: bo
 @Component({
   selector: 'app-assignment-activity-player',
   standalone: true,
+  imports: [NgTemplateOutlet],
   template: `
     @if (!readonlyMode() && !closed() && !finished()) { <p>Drag a card, or select a card and then select a target.</p> }
     @if (loading()) { <p role="status">Loading saved placements…</p> }
@@ -29,11 +34,30 @@ interface AttemptState { placements: Placement[]; revision: number; finished: bo
         } @empty { <span>All cards placed.</span> }
       </div>
     </div>
-    <div class="targets">
-      @for (target of activity().targets; track target.id) {
-        <article class="panel target" (dragover)="$event.preventDefault()" (drop)="drop($event, target.id)">
+    @if (activity().mode === 'label') {
+      <figure class="picture-targets">
+        <div class="picture">
+          <img [src]="activity().image" [alt]="activity().imageAlt || ''" />
+          @for (target of activity().targets; track target.id; let index = $index) {
+            <article class="picture-pin target" [style.left.%]="(target.x ?? 0) * 100"
+              [style.top.%]="(target.y ?? 0) * 100" (dragover)="$event.preventDefault()" (drop)="drop($event, target.id)">
+              <ng-container *ngTemplateOutlet="targetControls; context: {target: target, pin: index + 1}" />
+            </article>
+          }
+        </div>
+      </figure>
+    } @else {
+      <div class="targets">
+        @for (target of activity().targets; track target.id) {
+          <article class="panel target" (dragover)="$event.preventDefault()" (drop)="drop($event, target.id)">
+            <ng-container *ngTemplateOutlet="targetControls; context: {target: target, pin: null}" />
+          </article>
+        }
+      </div>
+    }
+    <ng-template #targetControls let-target="target" let-pin="pin">
           <button type="button" class="target-label" [attr.aria-label]="'Place in ' + target.label"
-                  [disabled]="locked() || selected() == null" (click)="place(target.id)">{{ target.label }}</button>
+                  [title]="target.label" [disabled]="locked() || selected() == null" (click)="place(target.id)">{{ pin ?? target.label }}</button>
           <div class="cards">
             @for (card of cardsAt(target.id); track card.id) {
               <button type="button" class="card" [disabled]="locked()" [draggable]="!locked()"
@@ -42,11 +66,9 @@ interface AttemptState { placements: Placement[]; revision: number; finished: bo
                         : incorrect().includes(card.id) ? card.label + ', try another target' : null"
                       [attr.aria-pressed]="selected() === card.id"
                       (dragstart)="beginDrag($event, card.id)" (click)="select(card.id)">{{ card.label }}</button>
-            } @empty { <span>Drop a card here</span> }
+            } @empty { @if (pin == null) { <span>Drop a card here</span> } }
           </div>
-        </article>
-      }
-    </div>
+    </ng-template>
     <div class="heading"><p role="status">{{ announcement() }}</p>
       @if (!locked()) {
         <button type="button" [disabled]="!placedCount()" (click)="reset()">Start over</button>
@@ -73,6 +95,14 @@ interface AttemptState { placements: Placement[]; revision: number; finished: bo
     h2 { font-size: 1.05rem; }
     .targets { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr)); gap: 10px; margin-top: 10px; }
     .target { min-height: 115px; border-style: dashed; }
+    .picture-targets { margin: 16px 0 0; padding: 16px 20px 30px; border: 1px solid #dce5e9; border-radius: 8px; }
+    .picture { position: relative; }
+    .picture img { width: 100%; height: auto; display: block; }
+    .picture-pin { position: absolute; transform: translate(-50%, -50%); min-height: 0; padding: 0; display: flex; align-items: center; gap: 2px; }
+    .picture-pin .target-label { width: 37px; height: 37px; min-height: 0; padding: 0; margin: 0; text-align: center;
+      background: #18599b; border: 2px solid #fff; color: #fff; border-radius: 50%; box-shadow: 0 1px 4px #17364877; }
+    .picture-pin .cards { position: absolute; top: 100%; left: 50%; transform: translateX(-50%); width: max-content; max-width: min(120px, 32vw); }
+    .picture-pin .card { min-height: 24px; padding: 3px 6px; overflow-wrap: anywhere; }
     button { border: 1px solid #aabdc7; border-radius: 7px; background: #fff; color: #162d40; min-height: 40px; padding: 6px 10px; }
     .target-label { font-weight: 700; text-align: left; width: 100%; margin-bottom: 8px; background: #ecf6f2; }
     .target-label:disabled { opacity: 1; }
@@ -160,7 +190,7 @@ export class AssignmentActivityPlayerComponent implements OnDestroy {
       const next = new Map(current);
       if (targetId === 0) next.delete(card.id);
       else {
-        if (this.activity().mode === 'match') {
+        if (this.activity().mode !== 'sort') {
           const existing = this.cardsAt(targetId)[0];
           if (existing) next.delete(existing.id);
         }

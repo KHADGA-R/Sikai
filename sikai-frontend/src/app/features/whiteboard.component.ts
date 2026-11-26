@@ -189,13 +189,15 @@ export class WhiteboardComponent {
     const now = this.now();
     return !!room && (isCurrentLiveSlot(room, now) || latestCompletedSlotId(this.live.state(), now) === this.slotId);
   });
-  readonly slidesOpen = signal(true);
+  readonly slidesOpen = signal(false);
+  readonly activityView = signal<'split' | 'activity'>('split');
+  readonly activityBoardShare = signal(65);
   readonly calculatorOpen = signal(false);
   readonly calculatorMode = signal<'standard' | 'scientific'>('standard');
   readonly sharedCalculator = signal<CalculatorPreview | null>(null);
   private localCalculator: CalculatorPreview | null = null;
   readonly mathsOpen = signal(false);
-  readonly boardSidebarOpen = computed(() => this.slidesOpen() || this.mathsOpen() || this.calculatorOpen() || !!this.sharedCalculator());
+  readonly boardSidebarOpen = computed(() => this.mathsOpen() || this.calculatorOpen() || !!this.sharedCalculator());
   readonly calculatorSharingAvailable = computed(() => {
     const room = this.board();
     const now = this.now();
@@ -216,6 +218,36 @@ export class WhiteboardComponent {
     return view === 'split' && !this.wideClassroom() ? 'whiteboard' : view;
   });
   private splitPointer?: number;
+  private activityPointer?: number;
+
+  startActivityResize(event: PointerEvent, divider: HTMLElement): void {
+    if (event.button !== 0 || this.activityPointer !== undefined) return;
+    event.preventDefault();
+    divider.focus();
+    divider.setPointerCapture(event.pointerId);
+    this.activityPointer = event.pointerId;
+  }
+
+  resizeActivity(event: PointerEvent, layout: HTMLElement): void {
+    if (event.pointerId !== this.activityPointer) return;
+    const bounds = layout.getBoundingClientRect();
+    if (bounds.width) this.setActivityShare((event.clientX - bounds.left) / bounds.width * 100);
+  }
+
+  stopActivityResize(event: PointerEvent): void {
+    if (event.pointerId === this.activityPointer) this.activityPointer = undefined;
+  }
+
+  keyboardActivityResize(event: KeyboardEvent): void {
+    const offset = event.key === 'ArrowLeft' ? -3 : event.key === 'ArrowRight' ? 3 : 0;
+    if (!offset) return;
+    event.preventDefault();
+    this.setActivityShare(this.activityBoardShare() + offset);
+  }
+
+  private setActivityShare(share: number): void {
+    this.activityBoardShare.set(Math.round(Math.min(72, Math.max(43, share))));
+  }
 
   constructor() {
     void this.refresh(true);
