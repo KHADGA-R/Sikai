@@ -13,9 +13,10 @@ import static org.springframework.http.HttpStatus.*;
 public class LearningController {
     private final Db db; private final CatalogService catalog;
     private final NotificationService notifications;
+    private final LessonQuizService quizzes;
 
     /** Connect personal learning routes to authenticated course access and parameterized persistence. */
-    public LearningController(Db db,CatalogService catalog,NotificationService notifications) { this.db=db; this.catalog=catalog; this.notifications=notifications; }
+    public LearningController(Db db,CatalogService catalog,NotificationService notifications,LessonQuizService quizzes) { this.db=db; this.catalog=catalog; this.notifications=notifications; this.quizzes=quizzes; }
 
     /** Return the principal's saved courses that are still published. */
     @GetMapping("/wishlist") public Object wishlist(@AuthenticationPrincipal AuthService.User user) { return db.list(CatalogService.SELECT+" JOIN wishlist w ON w.course_id=c.id WHERE w.user_id=? AND c.published=TRUE ORDER BY c.id",user.id()); }
@@ -57,19 +58,19 @@ public class LearningController {
     @PutMapping("/progress/{courseId}/lessons/{lessonId}") @Transactional
     public Object complete(@PathVariable long courseId,@PathVariable long lessonId,@AuthenticationPrincipal AuthService.User user) {
         catalog.accessContent(courseId,user); lockUser(user);
-        Db.require(db.exists("SELECT l.id FROM lesson l JOIN topic t ON t.id=l.topic_id WHERE l.id=? AND t.course_id=?",lessonId,courseId),NOT_FOUND,"Lesson not found in course");
-        if(!db.exists("SELECT user_id FROM progress WHERE user_id=? AND lesson_id=?",user.id(),lessonId)) {
-            db.update("INSERT INTO progress(user_id,lesson_id,completed_at) VALUES (?,?,?)",
-                user.id(),lessonId,System.currentTimeMillis());
-            notifications.completed(courseId,user);
-        }
+        var lesson = db.one("SELECT l.quiz FROM lesson l JOIN topic t ON t.id=l.topic_id WHERE l.id=? AND t.course_id=?",lessonId,courseId);
+        quizzes.requireUnlocked(courseId,lessonId,user);
+        Db.require(lesson.get("quiz")==null || quizzes.passed(lessonId,user.id()),FORBIDDEN,"Pass the quiz to complete this lesson");
+        quizzes.complete(courseId,lessonId,user);
         return Map.of("success",true);
     }
 
     /** Remove completion only when the requested lesson belongs to the specified accessible course. */
-    @DeleteMapping("/progress/{courseId}/lessons/{lessonId}")
+    @DeleteMapping("/progress/{courseId}/lessons/{lessonId}") @Transactional
     public Object uncomplete(@PathVariable long courseId,@PathVariable long lessonId,@AuthenticationPrincipal AuthService.User user) {
         catalog.accessContent(courseId,user);
+        lockUser(user);
+        Db.require(!quizzes.passed(lessonId,user.id()),CONFLICT,"Quiz completion is saved with your passing attempt");
         db.update("DELETE FROM progress WHERE user_id=? AND lesson_id=? AND lesson_id IN (SELECT l.id FROM lesson l JOIN topic t ON t.id=l.topic_id WHERE t.course_id=?)",user.id(),lessonId,courseId);
         return Map.of("success",true);
     }

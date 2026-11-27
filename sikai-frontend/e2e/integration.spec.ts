@@ -152,6 +152,39 @@ test('instructor publishes an uploaded course; student enrolls, opens its file a
     await student.getByRole('button', { name: 'Complete free enrollment', exact: false }).click();
     await student.getByRole('link', { name: 'Start learning', exact: false }).click();
     await expect(student.getByRole('link', { name: 'Open PDF', exact: true })).toHaveAttribute('href', /^blob:/);
+    const playerUrl = new URL(student.url());
+    await student.getByRole('button', { name: 'Notes', exact: true }).click();
+    await student.getByRole('button', { name: 'Add note' }).click();
+    await student.getByLabel('Your note').fill('Practise greetings before the next class.');
+    await student.getByRole('button', { name: 'Save note' }).click();
+    await expect(student.getByText('Practise greetings before the next class.')).toBeVisible();
+    await student.getByRole('button', { name: 'Q&A', exact: true }).click();
+    await student.getByLabel('Ask about this lesson').fill('When should I say Namaste?');
+    await student.getByRole('button', { name: 'Post question' }).click();
+    await expect(student.getByText('When should I say Namaste?')).toBeVisible();
+    const teacherPlayer = await page.context().newPage();
+    const teacherToken = await page.evaluate(() => sessionStorage.getItem('sikai.api-token'));
+    await teacherPlayer.addInitScript(token => sessionStorage.setItem('sikai.api-token', token!), teacherToken);
+    await teacherPlayer.goto(playerUrl.pathname + '?tab=Q%26A');
+    await teacherPlayer.getByRole('button', { name: 'Answer', exact: true }).click();
+    await teacherPlayer.getByLabel('Instructor answer').fill('Use it as a polite greeting.');
+    await teacherPlayer.getByRole('button', { name: 'Save', exact: true }).click();
+    await expect(teacherPlayer.getByText('Use it as a polite greeting.')).toBeVisible();
+    await teacherPlayer.getByRole('button', { name: 'Notes', exact: true }).click();
+    await expect(teacherPlayer.getByText('No notes for this lesson yet.')).toBeVisible();
+    await teacherPlayer.getByRole('button', { name: 'Announcements', exact: true }).click();
+    await teacherPlayer.getByLabel('Title', { exact: true }).fill('Practice reminder');
+    await teacherPlayer.getByLabel('Announcement', { exact: true }).fill('Bring your greetings worksheet to class.');
+    await teacherPlayer.getByRole('button', { name: 'Post announcement' }).click();
+    await expect(teacherPlayer.getByText('Practice reminder')).toBeVisible();
+    await teacherPlayer.close();
+    await student.getByRole('button', { name: 'Announcements', exact: true }).click();
+    await expect(student.getByText('Practice reminder')).toBeVisible();
+    await student.getByRole('button', { name: 'Mark as read' }).click();
+    await expect(student.getByRole('button', { name: 'Mark as read' })).toHaveCount(0);
+    await student.getByRole('button', { name: 'Q&A', exact: true }).click();
+    await expect(student.getByText('Use it as a polite greeting.')).toBeVisible();
+    await student.getByRole('button', { name: 'Assignments', exact: true }).click();
     await student.getByRole('link', { name: 'Lesson assignments', exact: true }).click();
     await expect(student.getByRole('link', { name: 'Back to lesson', exact: true })).toBeVisible();
     await expect(student.getByRole('heading', { name: 'Practice upload' })).toHaveCount(0);
@@ -471,6 +504,70 @@ test('instructor publishes an uploaded course; student enrolls, opens its file a
     await expect(student).toHaveURL(/\/login\?returnUrl=/);
   } finally { await context.close(); }
   expect(errors).toEqual([]);
+});
+
+test('lesson quizzes persist retries and unlock the next lesson only after a pass', async ({ page, browser }) => {
+  await register(page, 'instructor', 'Quiz Teacher');
+  const teacherToken = await page.evaluate(() => sessionStorage.getItem('sikai.api-token'));
+  const headers = { Authorization: 'Bearer ' + teacherToken };
+  const asset = await page.request.post('/api/instructor/workspaces/assets', {
+    headers, multipart: { file: { name: 'practice.pdf', mimeType: 'application/pdf', buffer: practicePdf() } },
+  });
+  expect(asset.ok()).toBeTruthy();
+  const { id: assetId } = await asset.json();
+  const id = 'ce66cbc0-35ff-4c24-8e09-a3bb8dc59377';
+  const quiz = [
+    { prompt: 'Which phrase is a greeting?', options: ['Hello', 'Goodbye'], correct: 0 },
+    { prompt: 'Which phrase is a farewell?', options: ['Hello again', 'See you later'], correct: 1 },
+  ];
+  const draft = await page.request.put('/api/instructor/workspaces/' + id, { headers, data: { revision: 0, course: {
+    id, title: 'Speaking Quiz Course', description: 'Practise greetings.', category: 'Languages', subcategory: 'English',
+    level: 'BEGINNER', price: 0, durationHours: 1, emoji: 'A', accent: 'teal',
+    topics: [{ id: 'new-topic', title: 'Speaking practice', lessons: [
+      { id: 'first', title: 'Greetings', kind: 'pdf', assetId, quiz },
+      { id: 'second', title: 'Farewells', kind: 'pdf', assetId, freePreview: true },
+    ] }],
+  } } });
+  expect(draft.ok()).toBeTruthy();
+  const publication = await page.request.post('/api/instructor/workspaces/' + id + '/publish', {
+    headers, data: { revision: (await draft.json()).revision },
+  });
+  expect(publication.ok()).toBeTruthy();
+  const { id: courseId } = await publication.json();
+  const curriculum = await page.request.get('/api/courses/' + courseId + '/content', { headers });
+  const [first, second] = (await curriculum.json())[0].lessons;
+  const student = await browser.newPage();
+  try {
+    await register(student, 'student', 'Quiz Student');
+    const token = await student.evaluate(() => sessionStorage.getItem('sikai.api-token'));
+    const studentHeaders = { Authorization: 'Bearer ' + token };
+    expect((await student.request.put('/api/me/enrollments/' + courseId, { headers: studentHeaders })).ok()).toBeTruthy();
+    const mediaPath = '/api/lessons/' + second.id + '/file';
+    expect((await student.request.get(mediaPath, { headers: studentHeaders })).status()).toBe(403);
+    expect((await student.request.get('/api/courses/' + courseId + '/preview/' + second.id)).status()).toBe(403);
+    expect((await student.request.put(`/api/me/progress/${courseId}/lessons/${first.id}`, { headers: studentHeaders })).status()).toBe(403);
+    const prompts = await student.request.get(`/api/courses/${courseId}/lessons/${first.id}/quiz`, { headers: studentHeaders });
+    expect((await prompts.json()).questions[0]).not.toHaveProperty('correct');
+    await student.goto(`/learn/${courseId}?lesson=${second.id}`);
+    await expect(student.getByText('Pass the earlier lesson quiz to unlock this lesson.')).toBeVisible();
+    await student.getByRole('button', { name: 'Go to Greetings' }).click();
+    await student.getByRole('button', { name: 'Take quiz', exact: true }).click();
+    await student.getByRole('radio', { name: 'Hello', exact: true }).check();
+    await student.getByRole('radio', { name: 'Hello again', exact: true }).check();
+    await student.getByRole('button', { name: 'Submit quiz' }).click();
+    await expect(student.getByText('1 of 2 correct.')).toBeVisible();
+    await expect(student.getByRole('button', { name: 'Next lesson locked' })).toBeDisabled();
+    await student.getByRole('button', { name: 'Try again' }).click();
+    await student.getByRole('radio', { name: 'Hello', exact: true }).check();
+    await student.getByRole('radio', { name: 'See you later', exact: true }).check();
+    await student.getByRole('button', { name: 'Submit quiz' }).click();
+    await expect(student.getByText('2 of 2 correct.')).toBeVisible();
+    await student.getByRole('button', { name: 'Continue to next lesson' }).click();
+    await expect(student).toHaveURL(new RegExp('lesson=' + second.id + '$'));
+    await student.reload();
+    await expect(student.getByRole('link', { name: 'Open PDF' })).toBeVisible();
+    expect((await student.request.get(mediaPath, { headers: studentHeaders })).ok()).toBeTruthy();
+  } finally { await student.close(); }
 });
 
 test('live teacher availability, student booking, messaging, meeting link and cancellation cross accounts', async ({ page, browser }) => {

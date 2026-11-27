@@ -23,12 +23,14 @@ public class CourseWorkspaceController {
     private final ContentController content;
     private final ObjectMapper mapper;
     private final Validator validator;
+    private final LessonQuizService quizzes;
 
     record Draft(long revision, JsonNode course) {}
     record Publication(long revision) {}
 
-    public CourseWorkspaceController(Db db, CatalogService catalog, ContentController content, ObjectMapper mapper, Validator validator) {
+    public CourseWorkspaceController(Db db, CatalogService catalog, ContentController content, ObjectMapper mapper, Validator validator, LessonQuizService quizzes) {
         this.db=db; this.catalog=catalog; this.content=content; this.mapper=mapper; this.validator=validator;
+        this.quizzes=quizzes;
     }
 
     @GetMapping
@@ -157,6 +159,7 @@ public class CourseWorkspaceController {
             db.update("UPDATE lesson SET file_key=?,file_name=?,content_type=? WHERE id=?",asset.get("id"),asset.get("file_name"),type,id);
         }
         Db.require(db.exists("SELECT id FROM lesson WHERE id=? AND file_key IS NOT NULL",id),BAD_REQUEST,"Upload a file for "+input.title());
+        if (lesson.has("quiz")) quizzes.save(id, lesson.get("quiz"));
         if(!lesson.path("slidesAssetId").asText().isEmpty()) {
             var asset=ownedAsset(lesson.path("slidesAssetId").asText(),user);
             Db.require("application/pdf".equals(asset.get("content_type")),BAD_REQUEST,"Slides must be a PDF");

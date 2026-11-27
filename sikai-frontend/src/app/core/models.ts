@@ -4,6 +4,7 @@ export type { Category } from './categories';
 /** Shared catalog projection; price, publication and real lesson count are supplied by the server. */
 export interface Course {
   id: number; title: string; description: string; instructor: string;
+  ownerId?: string;
   category: Category; subcategory?: string; price: number; isFree: boolean; level: Level;
   rating: number; enrollmentCount?: number; recentEnrollmentCount?: number; durationHours: number; lessons: number; emoji: string;
   accent: string; published: boolean; grade?: number;

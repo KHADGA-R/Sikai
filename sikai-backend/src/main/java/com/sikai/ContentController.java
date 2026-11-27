@@ -27,16 +27,20 @@ public class ContentController {
     record LessonInput(@NotBlank @Size(max=160) String title,@PositiveOrZero int minutes,@NotNull @Pattern(regexp="video|audio|pdf") String kind,@PositiveOrZero double duration,@NotNull @Size(max=500) List<@Valid Chapter> chapters,@PositiveOrZero int position,@Size(max=4000) String description,Boolean freePreview,String topicId) {}
     private final Db db; private final CatalogService catalog; private final ObjectMapper mapper; private final Path root;
     private final NotificationService notifications;
+    private final LessonQuizService quizzes;
 
     @GetMapping("/courses/{courseId}/syllabus")
     public Object syllabus(@PathVariable long courseId,@AuthenticationPrincipal AuthService.User user) {
         catalog.course(courseId,user);
         var topics=db.list("SELECT id,title,objective FROM topic WHERE course_id=? ORDER BY position,id",courseId);
+        var gated=quizzes.locked(courseId,null);
         for(var topic:topics) {
-            topic.put("lessons",db.list("""
+            var lessons=db.list("""
                 SELECT id,title,minutes,kind,(free_preview AND file_key IS NOT NULL) AS "freePreview"
                 FROM lesson WHERE topic_id=? ORDER BY position,id
-                """,topic.get("id")));
+                """,topic.get("id"));
+            for (var lesson : lessons) if (gated.contains(((Number)lesson.get("id")).longValue())) lesson.put("freePreview",false);
+            topic.put("lessons",lessons);
         }
         return topics;
     }
@@ -47,21 +51,31 @@ public class ContentController {
             SELECT l.file_key,l.file_name,l.content_type FROM lesson l JOIN topic t ON t.id=l.topic_id
             JOIN course c ON c.id=t.course_id WHERE c.id=? AND l.id=? AND c.published=TRUE AND l.free_preview=TRUE
             """,courseId,id);
+        quizzes.requireUnlocked(courseId,id,null);
         return savedFile((String)lesson.get("file_key"),(String)lesson.get("file_name"),(String)lesson.get("content_type"));
     }
 
     /** Resolve and create the configured upload root once; client filenames never choose storage paths. */
-    public ContentController(Db db,CatalogService catalog,ObjectMapper mapper,NotificationService notifications,@Value("${sikai.upload-directory}") String directory) throws java.io.IOException {
-        this.db=db; this.catalog=catalog; this.mapper=mapper; this.notifications=notifications; root=Path.of(directory).toAbsolutePath().normalize(); Files.createDirectories(root);
+    public ContentController(Db db,CatalogService catalog,ObjectMapper mapper,NotificationService notifications,LessonQuizService quizzes,@Value("${sikai.upload-directory}") String directory) throws java.io.IOException {
+        this.db=db; this.catalog=catalog; this.mapper=mapper; this.notifications=notifications; this.quizzes=quizzes; root=Path.of(directory).toAbsolutePath().normalize(); Files.createDirectories(root);
     }
 
     /** Authorize course access and return ordered topics with decoded lesson chapters and file metadata. */
     @GetMapping("/courses/{courseId}/content") public Object content(@PathVariable long courseId,@AuthenticationPrincipal AuthService.User user) {
         catalog.accessContent(courseId,user);
+        boolean manages=quizzes.manages(courseId,user);
+        var locked=manages ? Set.<Long>of() : quizzes.locked(courseId,user.id());
         var topics=db.list("SELECT id,title,position,objective FROM topic WHERE course_id=? ORDER BY position,id",courseId);
         for(var topic:topics) {
-            var lessons=db.list("SELECT id,title,minutes,kind,duration,chapters,description,free_preview AS \"freePreview\",slides_name AS \"slidesName\",file_name AS \"fileName\",(file_key IS NOT NULL) AS \"hasFile\",position FROM lesson WHERE topic_id=? ORDER BY position,id",topic.get("id"));
-            for(var lesson:lessons) { try { lesson.put("chapters",mapper.readTree((String)lesson.get("chapters"))); } catch(Exception e) { throw new IllegalStateException(e); } }
+            var lessons=db.list("SELECT id,title,minutes,kind,duration,chapters,description,free_preview AS \"freePreview\",slides_name AS \"slidesName\",file_name AS \"fileName\",(file_key IS NOT NULL) AS \"hasFile\",position,quiz FROM lesson WHERE topic_id=? ORDER BY position,id",topic.get("id"));
+            for(var lesson:lessons) {
+                try { lesson.put("chapters",mapper.readTree((String)lesson.get("chapters"))); }
+                catch(Exception e) { throw new IllegalStateException(e); }
+                Object quiz=lesson.remove("quiz");
+                lesson.put("hasQuiz",quiz!=null);
+                lesson.put("locked",locked.contains(((Number)lesson.get("id")).longValue()));
+                if (manages && quiz!=null) lesson.put("quiz",quizzes.questions(quiz));
+            }
             topic.put("lessons",lessons);
         }
         return topics;
@@ -135,6 +149,7 @@ public class ContentController {
     @GetMapping("/lessons/{id}/file") public ResponseEntity<Resource> download(@PathVariable long id,@AuthenticationPrincipal AuthService.User user) {
         var lesson=db.one("SELECT l.*,t.course_id FROM lesson l JOIN topic t ON t.id=l.topic_id WHERE l.id=?",id);
         catalog.accessContent(((Number)lesson.get("course_id")).longValue(),user);
+        quizzes.requireUnlocked(((Number)lesson.get("course_id")).longValue(),id,user);
         return savedFile((String)lesson.get("file_key"),(String)lesson.get("file_name"),(String)lesson.get("content_type"));
     }
 
@@ -149,6 +164,7 @@ public class ContentController {
     public ResponseEntity<Resource> slides(@PathVariable long id,@AuthenticationPrincipal AuthService.User user) {
         var lesson=db.one("SELECT l.slides_key,l.slides_name,t.course_id FROM lesson l JOIN topic t ON t.id=l.topic_id WHERE l.id=?",id);
         catalog.accessContent(((Number)lesson.get("course_id")).longValue(),user);
+        quizzes.requireUnlocked(((Number)lesson.get("course_id")).longValue(),id,user);
         return savedFile((String)lesson.get("slides_key"),(String)lesson.get("slides_name"),"application/pdf");
     }
 

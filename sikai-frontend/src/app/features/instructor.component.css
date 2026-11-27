@@ -4,3 +4,7 @@
 .curriculum-outline{display:flex;flex-wrap:wrap;gap:6px;padding:12px 0;border-bottom:1px solid #ddd7ef}
 .curriculum-outline a{padding:6px 10px;border-radius:6px;background:#edf2ee}
 .lesson-preview-setting{grid-template-columns:auto 1fr;align-items:center}
+.lesson-quiz-editor { margin-block: 14px; padding: 12px; border: 1px solid #e8e2ef; border-radius: 10px; }
+.lesson-quiz-editor summary { font-weight: 700; cursor: pointer; }
+.lesson-quiz-question { display: grid; gap: 8px; margin-block: 12px; padding: 12px; background: #f7f8f6; border-radius: 8px; }
+.lesson-quiz-question button { justify-self: start; }

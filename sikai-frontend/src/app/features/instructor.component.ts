@@ -4,7 +4,7 @@ import { Component, HostListener, OnDestroy, OnInit, inject, signal } from '@ang
 import { FormsModule } from '@angular/forms';
 import { AuthService } from '../core/auth.service';
 import { InstructorContentService } from '../core/instructor-content.service';
-import { InstructorCourse, InstructorLesson, InstructorTopic, formatTime, parseChapters } from '../core/instructor-content';
+import { InstructorCourse, InstructorLesson, InstructorTopic, formatTime, parseChapters, validateQuiz } from '../core/instructor-content';
 
 @Component({ standalone: true, imports: [FormsModule, RouterLink], templateUrl: './instructor.component.html', styleUrl: './instructor.component.css' })
 export class InstructorComponent implements OnInit, OnDestroy {
@@ -23,6 +23,12 @@ export class InstructorComponent implements OnInit, OnDestroy {
   draft: InstructorCourse | null = null;
   preview: InstructorLesson | null = null; previewUrl = ''; dirty = false; private previewRevision = 0;
   readonly formatTime = formatTime;
+  addQuizQuestion(lesson: InstructorLesson): void {
+    const quiz = lesson.quiz ??= [];
+    if (quiz.length >= 5) return;
+    quiz.push({ prompt: '', options: ['', '', ''], correct: null, feedback: '' });
+    this.change();
+  }
   readonly categories = COURSE_CATEGORIES; readonly subcategoriesFor = subcategoriesFor;
   /** Load owned course hierarchies and open the course requested by the dashboard query parameter. */
   async ngOnInit(): Promise<void> { this.busy.set(true); try { this.courses.set(await this.content.list()); const course = this.courses().find(c => c.id === this.route.snapshot.queryParamMap.get('course')); if(course) this.edit(course); } catch(e) { this.fail(e); } finally { this.busy.set(false); } }
@@ -252,6 +258,8 @@ export class InstructorComponent implements OnInit, OnDestroy {
         const lessonTarget = 'lesson-' + lesson.id;
         if (!lesson.title.trim()) issues.push({ target: lessonTarget, message: 'Give this lesson a title.' });
         if (!lesson.file && !lesson.assetId && !lesson.hasFile) issues.push({ target: lessonTarget, message: `Upload a file for ${lesson.title || 'this lesson'}.` });
+        const quizError = validateQuiz(lesson.quiz);
+        if (quizError) issues.push({ target: lessonTarget, message: `${lesson.title || 'Lesson quiz'}: ${quizError}` });
         if (lesson.kind !== 'pdf') {
           try { parseChapters(lesson.chapterText ?? this.chapterText(lesson), lesson.duration); }
           catch { issues.push({ target: lessonTarget, message: `Check chapter timestamps for ${lesson.title || 'this lesson'}.` }); }

@@ -1,4 +1,4 @@
-import { Chapter } from './instructor-content';
+import { Chapter, QuizQuestion } from './instructor-content';
 import { Course } from './models';
 
 /** Catalog response with the server-assigned owner's UUID. */
@@ -8,6 +8,7 @@ export interface ApiLesson {
   id: number; title: string; minutes: number; kind: 'video' | 'audio' | 'pdf';
   duration: number; chapters: Chapter[]; fileName?: string; hasFile: boolean; position: number;
   description?: string; freePreview?: boolean; slidesName?: string;
+  hasQuiz?: boolean; locked?: boolean; quiz?: QuizQuestion[];
 }
 /** Ordered topic containing the backend's real numeric lesson IDs. */
 export interface ApiTopic { id: string; title: string; position: number; objective?: string; lessons: ApiLesson[]; }

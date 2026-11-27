@@ -1,8 +1,9 @@
 import { Category, validClassification } from './categories';
 /** Media offset in seconds, as distinct from live-class epoch-millisecond timestamps. */
 export interface Chapter { seconds: number; title: string; }
+export interface QuizQuestion { prompt: string; options: string[]; correct: number | null; feedback?: string; }
 /** A staged upload keeps its Blob; saved lessons retain metadata and fetch the binary on demand. */
-export interface InstructorLesson { id: string; title: string; file?: Blob; hasFile?: boolean; fileName: string; kind: 'video' | 'audio' | 'pdf'; duration: number; chapters: Chapter[]; description?: string; freePreview?: boolean; slides?: File; slidesName?: string; removeSlides?: boolean; assetId?: string; slidesAssetId?: string; chapterText?: string; }
+export interface InstructorLesson { id: string; title: string; file?: Blob; hasFile?: boolean; fileName: string; kind: 'video' | 'audio' | 'pdf'; duration: number; chapters: Chapter[]; description?: string; freePreview?: boolean; slides?: File; slidesName?: string; removeSlides?: boolean; assetId?: string; slidesAssetId?: string; chapterText?: string; quiz?: QuizQuestion[]; }
 /** Editor topic IDs are temporary UUIDs until the server assigns the persisted topic ID. */
 export interface InstructorTopic { id: string; title: string; objective?: string; lessons: InstructorLesson[]; }
 /** The nested editor keeps course/lesson IDs as strings, including numeric server IDs after save. */
@@ -37,6 +38,21 @@ export function validateInstructorCourse(course: InstructorCourse): void {
       if ((!lesson.file && !lesson.hasFile && !lesson.assetId) || (lesson.file && (!(lesson.file instanceof Blob) || !lesson.file.size || lesson.file.size > 100 * 1024 * 1024))) throw new Error('Files must be nonempty and no larger than 100 MB.');
       if (lesson.kind === 'pdf' && lesson.chapters.length) throw new Error('PDF lessons cannot have media timestamps.');
       if (lesson.kind !== 'pdf') parseChapters(lesson.chapters.map(c => `${formatTime(c.seconds)} ${c.title}`).join('\n'), lesson.duration);
+      const quizError = validateQuiz(lesson.quiz);
+      if (quizError) throw new Error(`${lesson.title}: ${quizError}`);
     }
   }
+}
+
+export function validateQuiz(quiz?: QuizQuestion[]): string {
+  if (!quiz?.length) return '';
+  if (quiz.length < 2 || quiz.length > 5) return 'Add 2 to 5 quiz questions.';
+  for (const question of quiz) {
+    const choices = question.options.map(option => option.trim().toLowerCase());
+    if (!question.prompt.trim() || choices.some(choice => !choice) || new Set(choices).size !== choices.length ||
+        question.correct === null || question.correct < 0 || question.correct >= choices.length) {
+      return 'Enter a prompt and distinct choices, then select the correct answer for each question.';
+    }
+  }
+  return '';
 }
