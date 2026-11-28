@@ -9,7 +9,7 @@ import { formatTime } from '../core/instructor-content';
 import { LessonTool, LessonToolsComponent } from './lesson-tools.component';
 import { LessonQuizComponent } from './lesson-quiz.component';
 
-const playerTabs = ['Overview', 'Quiz', 'Q&A', 'Notes', 'Announcements', 'Resources', 'Assignments'] as const;
+const playerTabs = ['Overview', 'Q&A', 'Notes', 'Announcements', 'Resources', 'Assignments'] as const;
 type PlayerTab = (typeof playerTabs)[number];
 
 @Component({ standalone: true, imports: [RouterLink, LessonToolsComponent, LessonQuizComponent], styleUrl: './player.component.css', template: `
@@ -63,6 +63,9 @@ type PlayerTab = (typeof playerTabs)[number];
             <button type="button" class="button outline" aria-controls="course-content" [attr.aria-expanded]="contentOpen()" (click)="toggleContent()">
               {{contentOpen() ? 'Hide course content' : 'Show course content'}}
             </button>
+            @if (lesson.hasQuiz && !lesson.locked && !quizOpen) {
+              <button type="button" class="button outline" (click)="openQuiz(lesson.id)">{{teacher() ? 'Preview quiz' : 'Take quiz'}}</button>
+            }
             <button type="button" class="button outline" [disabled]="!nextLesson() || nextLesson()?.locked" (click)="step(1)">
               {{nextLesson()?.locked ? 'Next lesson locked' : 'Next lesson →'}}
             </button>
@@ -92,7 +95,7 @@ type PlayerTab = (typeof playerTabs)[number];
         <section class="lesson-content" aria-label="Lesson details">
           <nav class="player-tabs" aria-label="Lesson sections">
             @for(tab of visibleTabs(); track tab) {
-              <button type="button" [attr.aria-pressed]="currentTab() === tab" (click)="selectTab(tab)">{{tab}}</button>
+              <button type="button" [attr.aria-pressed]="currentTab() === tab" (click)="activeTab.set(tab)">{{tab}}</button>
             }
           </nav>
           @if (activeTool(); as tool) {
@@ -106,11 +109,7 @@ type PlayerTab = (typeof playerTabs)[number];
             @case('Overview') {
               <h2>{{lesson.title}}</h2>
               @if(lesson.description){<p class="lesson-description">{{lesson.description}}</p>}
-              @if (lesson.hasQuiz) {
-                @if (quizLesson() !== lesson.id) {
-                  <button type="button" class="button primary" (click)="openQuiz(lesson.id)">{{teacher() ? 'Preview quiz' : 'Take quiz'}}</button>
-                }
-              } @else if (!teacher()) {
+              @if (!lesson.hasQuiz && !teacher()) {
                 <button type="button" class="button primary" [disabled]="store.pending().includes('lesson:'+lesson.id)" (click)="store.toggleLesson(c.id,lesson.id)">{{isCompleted() ? '✓ Completed — mark incomplete' : '✓ Mark lesson complete'}}</button>
               }
             }
@@ -156,7 +155,7 @@ export class PlayerComponent {
   readonly visibleTabs = computed<readonly PlayerTab[]>(() => {
     const lesson = this.selectedLesson();
     if (!lesson || lesson.locked) return ['Announcements'];
-    return lesson.hasQuiz ? playerTabs : playerTabs.filter(tab => tab !== 'Quiz');
+    return playerTabs;
   });
   readonly currentTab = computed(() => this.visibleTabs().includes(this.activeTab()) ? this.activeTab() : this.visibleTabs()[0]);
   readonly activeTool = computed<LessonTool | null>(() => {
@@ -239,7 +238,7 @@ export class PlayerComponent {
   }
 
   private selectLesson(id: number): void {
-    this.closeQuiz();
+    this.quizLesson.set(null);
     this.selected.set(id);
     this.fileRetry.update(n => n + 1);
     void this.router.navigate([], { relativeTo: this.route, queryParams: { lesson: id }, queryParamsHandling: 'merge', replaceUrl: true });
@@ -247,7 +246,7 @@ export class PlayerComponent {
 
   jumpTo(target: { lessonId: number; seconds: number }): void {
     if (this.lessons().find(lesson => lesson.id === target.lessonId)?.locked) return;
-    this.closeQuiz();
+    this.quizLesson.set(null);
     const media = this.mediaElement()?.nativeElement;
     if (target.lessonId === this.selected() && media && media.readyState > 0) {
       media.currentTime = target.seconds;
@@ -275,12 +274,6 @@ export class PlayerComponent {
     if (lesson && !lesson.locked) this.choose(lesson.id);
   }
 
-  selectTab(tab: PlayerTab): void {
-    const id = this.selected();
-    if (tab === 'Quiz' && id !== null) this.openQuiz(id);
-    else this.activeTab.set(tab);
-  }
-
   openQuiz(id: number): void {
     const lesson = this.selectedLesson();
     if (lesson?.id !== id || !lesson.hasQuiz || lesson.locked) return;
@@ -288,7 +281,6 @@ export class PlayerComponent {
     media?.pause();
     if (media && document.fullscreenElement === media) void document.exitFullscreen().catch(() => {});
     this.quizLesson.set(id);
-    this.activeTab.set('Quiz');
     afterNextRender(() => {
       if (this.quizLesson() !== id) return;
       const stage = this.quizStage()?.nativeElement;
@@ -298,7 +290,7 @@ export class PlayerComponent {
   }
 
   replayLesson(): void {
-    this.closeQuiz();
+    this.quizLesson.set(null);
     const media = this.mediaElement()?.nativeElement;
     if (media) {
       media.currentTime = 0;
@@ -306,10 +298,6 @@ export class PlayerComponent {
     }
   }
 
-  private closeQuiz(): void {
-    this.quizLesson.set(null);
-    if (this.activeTab() === 'Quiz') this.activeTab.set('Overview');
-  }
 
   async refreshUnlocks(courseId: number): Promise<void> {
     if (this.teacher()) return;
