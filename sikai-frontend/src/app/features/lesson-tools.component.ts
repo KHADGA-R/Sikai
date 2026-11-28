@@ -3,26 +3,37 @@ import { DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ApiService } from '../core/api.service';
 import { formatTime } from '../core/instructor-content';
+import { ThemeIconComponent } from '../shared/theme-icon.component';
 
 export type LessonTool = 'Q&A' | 'Notes' | 'Announcements';
+interface Reply { id: string; author: string; body: string; createdAt: number; teacher: boolean; canEdit: boolean; }
 interface Item {
   id: string; body: string; createdAt: number; seconds: number | null;
-  author?: string; answer?: string; lessonId?: number; lessonTitle?: string;
+  author?: string; lessonId?: number; lessonTitle?: string;
+  replies?: Reply[]; voteCount?: number; voted?: boolean; canVote?: boolean;
   title?: string; unread?: boolean;
 }
 
 @Component({
   selector: 'app-lesson-tools',
-  imports: [DatePipe, FormsModule],
+  imports: [DatePipe, FormsModule, ThemeIconComponent],
   template: `
     <h2>{{ tool() }}</h2>
     @if (tool() === 'Q&A') {
+      <div class="actions">
       <label class="scope">Show questions
         <select [ngModel]="allLessons()" (ngModelChange)="allLessons.set($event)">
           <option [ngValue]="false">This lesson</option>
           <option [ngValue]="true">All lessons</option>
         </select>
       </label>
+      <label class="scope">Sort by
+        <select [ngModel]="sort()" (ngModelChange)="sort.set($event)">
+          <option value="newest">Newest</option>
+          <option value="votes">Most upvoted</option>
+        </select>
+      </label>
+      </div>
     }
     @if (tool() === 'Notes') {
       <p>Private to you.</p>
@@ -60,7 +71,7 @@ interface Item {
     @else if (!error() && !items().length) {
       <p>{{ tool() === 'Notes' ? 'No notes for this lesson yet.' : tool() === 'Q&A' ? 'No questions yet.' : 'No announcements yet.' }}</p>
     }
-    @for (item of items(); track item.id) {
+    @for (item of sortedItems(); track item.id) {
       <article>
         <header>
           @if (item.title || item.author) { <strong>{{ item.title || item.author }}</strong> }
@@ -73,12 +84,50 @@ interface Item {
             (click)="seek.emit({ lessonId: item.lessonId ?? lessonId(), seconds: item.seconds })">{{ formatTime(item.seconds) }}</button>
         }
         <p class="entry">{{ item.body }}</p>
-        @if (item.answer) {
-          <div class="answer"><strong>Instructor answer</strong><p class="entry">{{ item.answer }}</p></div>
-        }
-        @if (editing() === item.id) {
+        @if (tool() === 'Q&A') {
+          <div class="actions">
+            <button type="button" class="button outline vote" [attr.aria-pressed]="!!item.voted"
+              [title]="item.voted ? 'Your vote is saved' : item.canVote ? 'Upvote this question' : 'Only students can upvote someone else’s question'"
+              [disabled]="busy() || !item.canVote || !!item.voted" (click)="upvote(item)">
+              <app-theme-icon [name]="item.voted ? 'check' : 'arrow-up'" />
+              {{ item.voted ? 'Voted' : 'Upvote' }} · {{ item.voteCount }}
+            </button>
+            @if (item.replies?.length) {
+              <button type="button" class="button outline" [attr.aria-expanded]="expanded().has(item.id)" (click)="toggleThread(item.id)">
+                {{ item.replies?.length }} {{ item.replies?.length === 1 ? 'reply' : 'replies' }}
+              </button>
+            }
+            <button type="button" class="button outline" (click)="startReply(item.id)">Reply</button>
+          </div>
+          @if (expanded().has(item.id)) {
+            <ol class="thread" aria-label="Question replies">
+              @for (reply of item.replies; track reply.id) {
+                <li>
+                  <header><strong>{{ reply.author }}</strong><small>{{ reply.createdAt | date:'mediumDate' }}</small>
+                    @if (reply.teacher) { <span class="unread">Teacher</span> }
+                  </header>
+                  <p class="entry">{{ reply.body }}</p>
+                  @if (reply.canEdit && replyTarget()?.replyId !== reply.id) {
+                    <button type="button" class="button outline" (click)="startReply(item.id, reply)">Edit reply</button>
+                  }
+                </li>
+              }
+            </ol>
+            @if (replyTarget()?.questionId === item.id) {
+              <form (ngSubmit)="saveReply()">
+                <label>{{ replyTarget()?.replyId ? 'Edit your reply' : 'Your reply' }}
+                  <textarea name="replyBody" [(ngModel)]="replyBody" required maxlength="3000" rows="2"></textarea>
+                </label>
+                <div class="actions">
+                  <button type="submit" class="button primary" [disabled]="busy() || !replyBody.trim()">{{ replyTarget()?.replyId ? 'Save reply' : 'Post reply' }}</button>
+                  <button type="button" class="button outline" (click)="replyTarget.set(null)">Cancel</button>
+                </div>
+              </form>
+            }
+          }
+        } @else if (editing() === item.id) {
           <form (ngSubmit)="saveEdit(item)">
-            <label>{{ tool() === 'Notes' ? 'Edit note' : 'Instructor answer' }}
+            <label>Edit note
               <textarea name="editBody" [(ngModel)]="editBody" required maxlength="3000" rows="3"></textarea>
             </label>
             <div class="actions">
@@ -88,9 +137,6 @@ interface Item {
           </form>
         } @else {
           <div class="actions">
-            @if (tool() === 'Q&A' && teacher()) {
-              <button type="button" class="button outline" (click)="edit(item.id, item.answer ?? '')">{{ item.answer ? 'Edit answer' : 'Answer' }}</button>
-            }
             @if (tool() === 'Notes') {
               <button type="button" class="button outline" (click)="edit(item.id, item.body)">Edit note</button>
               <button type="button" class="button outline" [disabled]="busy()" (click)="removeNote(item.id)">Delete note</button>
@@ -114,7 +160,13 @@ interface Item {
     .actions, header { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
     article { border-top: 1px solid #e8e2ef; padding: 14px 0; margin-top: 8px; overflow-wrap: anywhere; }
     .entry { white-space: pre-wrap; margin-block: 8px; }
-    .answer { padding: 10px 12px; margin: 8px 0; border-inline-start: 3px solid var(--sikai-teal); background: #f1f6f2; }
+    .thread { list-style: none; padding: 0 0 0 12px; margin: 12px 0; border-inline-start: 3px solid #c8d4ce; }
+    .thread li { padding: 8px; }
+    .thread li + li { border-top: 1px solid #e8e2ef; }
+    button[aria-pressed=true] { background: #e8f2ed; border-color: var(--sikai-teal); }
+    .vote { gap: 6px; }
+    .vote app-theme-icon { width: 16px; height: 16px; }
+    .vote[aria-pressed=true]:disabled { opacity: 1; }
     .timestamp, .unread { color: var(--sikai-teal); background: #e8f2ed; border: 1px solid #c8d4ce; border-radius: 6px; padding: 3px 7px; }
     .timestamp { margin-inline-start: 6px; }
     .button { padding: 7px 11px; }
@@ -135,6 +187,12 @@ export class LessonToolsComponent {
   readonly loading = signal(true);
   readonly error = signal('');
   readonly allLessons = signal(false);
+  readonly sort = signal<'newest' | 'votes'>('newest');
+  readonly sortedItems = computed(() => this.sort() === 'votes'
+    ? [...this.items()].sort((a, b) => (b.voteCount ?? 0) - (a.voteCount ?? 0) || b.createdAt - a.createdAt)
+    : this.items());
+  readonly expanded = signal<Set<string>>(new Set());
+  readonly replyTarget = signal<{ questionId: string; replyId?: string } | null>(null);
   readonly composing = signal(false);
   readonly editing = signal<string | null>(null);
   readonly formatTime = formatTime;
@@ -151,6 +209,7 @@ export class LessonToolsComponent {
   body = '';
   title = '';
   editBody = '';
+  replyBody = '';
   attachTime = false;
   noteTime: number | null = null;
 
@@ -201,10 +260,41 @@ export class LessonToolsComponent {
   }
 
   async saveEdit(item: Item): Promise<void> {
-    const path = this.tool() === 'Notes'
-      ? this.lessonPath() + '/notes/' + item.id
-      : this.base() + '/questions/' + item.id + '/answer';
+    const path = this.lessonPath() + '/notes/' + item.id;
     if (this.editBody.trim() && await this.write('PUT', path, { body: this.editBody.trim() })) this.editing.set(null);
+  }
+
+  toggleThread(id: string): void {
+    this.expanded.update(current => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  startReply(questionId: string, reply?: Reply): void {
+    if (!this.expanded().has(questionId)) this.toggleThread(questionId);
+    this.replyBody = reply?.body ?? '';
+    this.replyTarget.set({ questionId, replyId: reply?.id });
+  }
+
+  async saveReply(): Promise<void> {
+    const target = this.replyTarget();
+    const body = this.replyBody.trim();
+    if (!target || !body) return;
+    const path = this.base() + '/questions/' + target.questionId + '/replies';
+    if (await this.write(target.replyId ? 'PUT' : 'POST', target.replyId ? path + '/' + target.replyId : path, { body })
+      && this.replyTarget() === target) this.replyTarget.set(null);
+  }
+
+  async upvote(item: Item): Promise<void> {
+    if (!item.canVote || item.voted) return;
+    if (await this.write('PUT', this.base() + '/questions/' + item.id + '/vote')) {
+      this.items.update(items => items.map(question => question.id === item.id && !question.voted
+        ? { ...question, voted: true, voteCount: (question.voteCount ?? 0) + 1 }
+        : question));
+    }
   }
 
   async removeNote(id: string): Promise<void> {

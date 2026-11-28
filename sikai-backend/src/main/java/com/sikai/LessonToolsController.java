@@ -2,6 +2,7 @@ package com.sikai;
 
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.*;
+import java.util.*;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
@@ -29,14 +30,34 @@ public class LessonToolsController {
     public Object questions(@PathVariable long courseId, @RequestParam(required=false) Long lessonId,
                             @AuthenticationPrincipal AuthService.User user) {
         catalog.accessContent(courseId, user);
-        return db.list("""
-            SELECT q.id,q.body,q.seconds,q.answer,q.created_at AS "createdAt",u.name AS author,
-                   l.id AS "lessonId",l.title AS "lessonTitle"
+        String condition = lessonId == null ? "" : " AND l.id=?";
+        var rows = db.list("""
+            SELECT q.id,q.body,q.seconds,q.created_at AS "createdAt",u.name AS author,
+                   l.id AS "lessonId",l.title AS "lessonTitle",
+                   (SELECT COUNT(*) FROM lesson_question_vote v WHERE v.question_id=q.id) AS "voteCount",
+                   EXISTS(SELECT 1 FROM lesson_question_vote v WHERE v.question_id=q.id AND v.user_id=?) AS voted,
+                   (q.author_id<>?) AS "otherAuthor"
             FROM lesson_question q JOIN app_user u ON u.id=q.author_id
             JOIN lesson l ON l.id=q.lesson_id JOIN topic t ON t.id=l.topic_id
             WHERE t.course_id=?
-            """ + (lessonId == null ? "" : " AND l.id=?") + " ORDER BY q.created_at DESC,q.id",
-            lessonId == null ? new Object[]{courseId} : new Object[]{courseId,lessonId});
+            """ + condition + " ORDER BY q.created_at DESC,q.id",
+            lessonId == null ? new Object[]{user.id(),user.id(),courseId} : new Object[]{user.id(),user.id(),courseId,lessonId});
+        var replies = db.list("""
+            SELECT r.id,r.question_id AS "questionId",r.body,r.created_at AS "createdAt",u.name AS author,
+                   (u.id=c.owner_id OR u.role='admin') AS teacher,(r.author_id=?) AS "canEdit"
+            FROM lesson_question_reply r JOIN app_user u ON u.id=r.author_id
+            JOIN lesson_question q ON q.id=r.question_id JOIN lesson l ON l.id=q.lesson_id
+            JOIN topic t ON t.id=l.topic_id JOIN course c ON c.id=t.course_id WHERE t.course_id=?
+            """ + condition + " ORDER BY r.created_at,r.id",
+            lessonId == null ? new Object[]{user.id(),courseId} : new Object[]{user.id(),courseId,lessonId});
+        Map<Object,List<Map<String,Object>>> byQuestion = new HashMap<>();
+        for (var reply : replies) byQuestion.computeIfAbsent(reply.remove("questionId"), key -> new ArrayList<>()).add(reply);
+        for (var row : rows) {
+            boolean otherAuthor = Boolean.TRUE.equals(row.remove("otherAuthor"));
+            row.put("canVote", otherAuthor && user.role().equals("student"));
+            row.put("replies", byQuestion.getOrDefault(row.get("id"), List.of()));
+        }
+        return rows;
     }
 
     @PostMapping("/lessons/{lessonId}/questions")
@@ -48,14 +69,42 @@ public class LessonToolsController {
             Db.id(), lessonId, user.id(), entry.body().strip(), entry.seconds(), System.currentTimeMillis());
     }
 
-    @PutMapping("/questions/{id}/answer")
-    public void answer(@PathVariable long courseId, @PathVariable String id, @Valid @RequestBody Message message,
-                       @AuthenticationPrincipal AuthService.User user) {
-        catalog.owner(courseId, user);
-        Db.require(db.update("""
-            UPDATE lesson_question SET answer=? WHERE id=? AND lesson_id IN
-            (SELECT l.id FROM lesson l JOIN topic t ON t.id=l.topic_id WHERE t.course_id=?)
-            """, message.body().strip(), id, courseId) == 1, NOT_FOUND, "Question not found");
+    @PostMapping("/questions/{id}/replies")
+    @ResponseStatus(CREATED)
+    public void reply(@PathVariable long courseId, @PathVariable String id, @Valid @RequestBody Message message,
+                      @AuthenticationPrincipal AuthService.User user) {
+        question(courseId, id, user);
+        db.update("INSERT INTO lesson_question_reply(id,question_id,author_id,body,created_at) VALUES (?,?,?,?,?)",
+            Db.id(), id, user.id(), message.body().strip(), System.currentTimeMillis());
+    }
+
+    @PutMapping("/questions/{id}/replies/{replyId}")
+    public void editReply(@PathVariable long courseId, @PathVariable String id, @PathVariable String replyId,
+                          @Valid @RequestBody Message message, @AuthenticationPrincipal AuthService.User user) {
+        question(courseId, id, user);
+        Db.require(db.update("UPDATE lesson_question_reply SET body=? WHERE id=? AND question_id=? AND author_id=?",
+            message.body().strip(), replyId, id, user.id()) == 1, NOT_FOUND, "Reply not found");
+    }
+
+    @PutMapping("/questions/{id}/vote")
+    @Transactional
+    public void vote(@PathVariable long courseId, @PathVariable String id, @AuthenticationPrincipal AuthService.User user) {
+        var question = question(courseId, id, user);
+        Db.require(user.role().equals("student") && !user.id().equals(question.get("author_id")), FORBIDDEN,
+            "Students can upvote another person's question");
+        db.one("SELECT id FROM lesson_question WHERE id=? FOR UPDATE", id);
+        if (!db.exists("SELECT 1 FROM lesson_question_vote WHERE question_id=? AND user_id=?", id, user.id())) {
+            db.update("INSERT INTO lesson_question_vote(question_id,user_id) VALUES (?,?)", id, user.id());
+        }
+    }
+
+    private Map<String,Object> question(long courseId, String id, AuthService.User user) {
+        var question = db.one("""
+            SELECT q.lesson_id,q.author_id FROM lesson_question q JOIN lesson l ON l.id=q.lesson_id
+            JOIN topic t ON t.id=l.topic_id WHERE q.id=? AND t.course_id=?
+            """, id, courseId);
+        requireLesson(courseId, ((Number)question.get("lesson_id")).longValue(), user);
+        return question;
     }
 
     @GetMapping("/lessons/{lessonId}/notes")

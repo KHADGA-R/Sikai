@@ -37,6 +37,7 @@ export class ThemeIconComponent {
     ellipse: 'M21 12a9 5 0 1 1-18 0 9 5 0 0 1 18 0z',
     circle: 'M20 12a8 8 0 1 1-16 0 8 8 0 0 1 16 0z',
     arrow: 'M5 19 19 5 M10 5h9v9',
+    'arrow-up': 'M12 19V5 M6 11l6-6 6 6',
     sticky: 'M5 3h14a1 1 0 0 1 1 1v11l-5 6H5a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z M15 21v-5a1 1 0 0 1 1-1h4 M8 8h8 M8 12h6',
     table: 'M3 4h18v16H3z M3 9h18 M3 14h18 M9 4v16 M15 4v16',
     insert: 'M4 12h16 M12 4v16',
