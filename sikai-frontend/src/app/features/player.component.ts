@@ -1,4 +1,4 @@
-import { Component, ElementRef, computed, effect, inject, signal, viewChild } from '@angular/core';
+import { Component, ElementRef, Injector, afterNextRender, computed, effect, inject, signal, viewChild } from '@angular/core';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { LearnHubStore } from '../core/store.service';
@@ -33,6 +33,18 @@ type PlayerTab = (typeof playerTabs)[number];
       <div class="lesson-workspace" [class.content-hidden]="!contentOpen() || !lessons().length">
       <div class="lesson-stage">
         @if(selectedLesson(); as lesson){
+          @let quizOpen = quizLesson() === lesson.id;
+          @if (quizOpen) {
+            @for (id of [lesson.id]; track id) {
+              <div class="quiz-stage" #quizStage tabindex="-1">
+                <app-lesson-quiz [courseId]="c.id" [lessonId]="id"
+                  [canAdvance]="!teacher() && !!nextLesson() && !nextLesson()?.locked"
+                  [courseComplete]="!teacher() && !nextLesson() && completedCount() === lessons().length"
+                  (passed)="refreshUnlocks(c.id)" (advance)="step(1)" (replay)="replayLesson()" />
+              </div>
+            }
+          }
+          <div [hidden]="quizOpen">
           @if (lesson.locked) {
             <div class="video-placeholder"><strong>{{lesson.title}}</strong><p>Pass the earlier lesson quiz to unlock this lesson.</p>
               @if (nextAvailable(); as available) {
@@ -41,10 +53,11 @@ type PlayerTab = (typeof playerTabs)[number];
             </div>
           } @else if(fileLoading()){<p role="status">Loading lesson file...</p>}
           @else if(fileUrl()){
-            @if(lesson.kind === 'video'){<video #media controls playsinline preload="metadata" [src]="fileUrl()" [attr.aria-label]="lesson.title" (loadedmetadata)="applySeek(lesson.id, media)"></video><div class="chapter-links">@for(chapter of lesson.chapters; track chapter.seconds){<button class="button outline" (click)="media.currentTime = chapter.seconds">{{formatTime(chapter.seconds)}} · {{chapter.title}}</button>}</div>}
+            @if(lesson.kind === 'video'){<video #media controls playsinline preload="metadata" [src]="fileUrl()" [attr.aria-label]="lesson.title" (loadedmetadata)="applySeek(lesson.id, media)" (ended)="openQuiz(lesson.id)"></video><div class="chapter-links">@for(chapter of lesson.chapters; track chapter.seconds){<button class="button outline" (click)="media.currentTime = chapter.seconds">{{formatTime(chapter.seconds)}} · {{chapter.title}}</button>}</div>}
             @else if(lesson.kind === 'audio'){<audio #media controls [src]="fileUrl()" (loadedmetadata)="applySeek(lesson.id, media)" style="width:100%"></audio><div class="chapter-links">@for(chapter of lesson.chapters; track chapter.seconds){<button class="button outline" (click)="media.currentTime = chapter.seconds">{{formatTime(chapter.seconds)}} · {{chapter.title}}</button>}</div>}
             @else{<div class="video-placeholder"><span>📄</span><strong>{{lesson.title}}</strong><a class="button primary" [href]="fileUrl()" target="_blank" rel="noopener">Open PDF</a></div>}
           } @else {<div class="video-placeholder"><span>{{c.emoji}}</span><strong>{{lesson.title}}</strong><small>{{lesson.hasFile ? 'Unable to load this file. Select the lesson again to retry.' : 'Your instructor has not uploaded this file yet.'}}</small></div>}
+          </div>
           <div class="lesson-navigation">
             <button type="button" class="button outline" [disabled]="!previousLesson() || previousLesson()?.locked" (click)="step(-1)">← Previous lesson</button>
             <button type="button" class="button outline" aria-controls="course-content" [attr.aria-expanded]="contentOpen()" (click)="toggleContent()">
@@ -79,7 +92,7 @@ type PlayerTab = (typeof playerTabs)[number];
         <section class="lesson-content" aria-label="Lesson details">
           <nav class="player-tabs" aria-label="Lesson sections">
             @for(tab of visibleTabs(); track tab) {
-              <button type="button" [attr.aria-pressed]="currentTab() === tab" (click)="activeTab.set(tab)">{{tab}}</button>
+              <button type="button" [attr.aria-pressed]="currentTab() === tab" (click)="selectTab(tab)">{{tab}}</button>
             }
           </nav>
           @if (activeTool(); as tool) {
@@ -94,17 +107,11 @@ type PlayerTab = (typeof playerTabs)[number];
               <h2>{{lesson.title}}</h2>
               @if(lesson.description){<p class="lesson-description">{{lesson.description}}</p>}
               @if (lesson.hasQuiz) {
-                <button type="button" class="button primary" (click)="activeTab.set('Quiz')">{{teacher() ? 'Preview quiz' : 'Take quiz'}}</button>
+                @if (quizLesson() !== lesson.id) {
+                  <button type="button" class="button primary" (click)="openQuiz(lesson.id)">{{teacher() ? 'Preview quiz' : 'Take quiz'}}</button>
+                }
               } @else if (!teacher()) {
                 <button type="button" class="button primary" [disabled]="store.pending().includes('lesson:'+lesson.id)" (click)="store.toggleLesson(c.id,lesson.id)">{{isCompleted() ? '✓ Completed — mark incomplete' : '✓ Mark lesson complete'}}</button>
-              }
-            }
-            @case('Quiz') {
-              @for (id of [lesson.id]; track id) {
-                <app-lesson-quiz [courseId]="c.id" [lessonId]="id" (passed)="refreshUnlocks(c.id)" />
-              }
-              @if (nextLesson() && !nextLesson()?.locked && !teacher()) {
-                <button type="button" class="button outline quiz-next" (click)="step(1)">Continue to next lesson</button>
               }
             }
             @case('Resources') {
@@ -132,6 +139,7 @@ export class PlayerComponent {
   readonly store = inject(LearnHubStore);
   private readonly api = inject(ApiService);
   private readonly auth = inject(AuthService);
+  private readonly injector = inject(Injector);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly params = toSignal(this.route.paramMap, { initialValue: this.route.snapshot.paramMap });
@@ -144,6 +152,7 @@ export class PlayerComponent {
   readonly completedCount = computed(() => this.lessons().filter(l => this.store.completed(this.id()).includes(l.id)).length);
   readonly teacher = computed(() => this.canManage(this.course()?.ownerId));
   readonly activeTab = signal<PlayerTab>('Overview');
+  readonly quizLesson = signal<number | null>(null);
   readonly visibleTabs = computed<readonly PlayerTab[]>(() => {
     const lesson = this.selectedLesson();
     if (!lesson || lesson.locked) return ['Announcements'];
@@ -155,6 +164,7 @@ export class PlayerComponent {
     return tab === 'Q&A' || tab === 'Notes' || tab === 'Announcements' ? tab : null;
   });
   readonly mediaElement = viewChild<ElementRef<HTMLMediaElement>>('media');
+  private readonly quizStage = viewChild<ElementRef<HTMLElement>>('quizStage');
   readonly playbackTime = (): number | null => {
     const media = this.mediaElement()?.nativeElement;
     return media && Number.isFinite(media.currentTime) ? Math.floor(media.currentTime) : null;
@@ -225,11 +235,11 @@ export class PlayerComponent {
   /** Select a real lesson ID and trigger a file retry even if that lesson was already selected. */
   choose(id: number): void {
     this.pendingSeek = null;
-    if (this.activeTab() === 'Quiz') this.activeTab.set('Overview');
     this.selectLesson(id);
   }
 
   private selectLesson(id: number): void {
+    this.closeQuiz();
     this.selected.set(id);
     this.fileRetry.update(n => n + 1);
     void this.router.navigate([], { relativeTo: this.route, queryParams: { lesson: id }, queryParamsHandling: 'merge', replaceUrl: true });
@@ -237,6 +247,7 @@ export class PlayerComponent {
 
   jumpTo(target: { lessonId: number; seconds: number }): void {
     if (this.lessons().find(lesson => lesson.id === target.lessonId)?.locked) return;
+    this.closeQuiz();
     const media = this.mediaElement()?.nativeElement;
     if (target.lessonId === this.selected() && media && media.readyState > 0) {
       media.currentTime = target.seconds;
@@ -262,6 +273,42 @@ export class PlayerComponent {
   step(offset: -1 | 1): void {
     const lesson = offset === -1 ? this.previousLesson() : this.nextLesson();
     if (lesson && !lesson.locked) this.choose(lesson.id);
+  }
+
+  selectTab(tab: PlayerTab): void {
+    const id = this.selected();
+    if (tab === 'Quiz' && id !== null) this.openQuiz(id);
+    else this.activeTab.set(tab);
+  }
+
+  openQuiz(id: number): void {
+    const lesson = this.selectedLesson();
+    if (lesson?.id !== id || !lesson.hasQuiz || lesson.locked) return;
+    const media = this.mediaElement()?.nativeElement;
+    media?.pause();
+    if (media && document.fullscreenElement === media) void document.exitFullscreen().catch(() => {});
+    this.quizLesson.set(id);
+    this.activeTab.set('Quiz');
+    afterNextRender(() => {
+      if (this.quizLesson() !== id) return;
+      const stage = this.quizStage()?.nativeElement;
+      stage?.focus({ preventScroll: true });
+      stage?.scrollIntoView({ block: 'nearest' });
+    }, { injector: this.injector });
+  }
+
+  replayLesson(): void {
+    this.closeQuiz();
+    const media = this.mediaElement()?.nativeElement;
+    if (media) {
+      media.currentTime = 0;
+      void media.play().catch(() => {});
+    }
+  }
+
+  private closeQuiz(): void {
+    this.quizLesson.set(null);
+    if (this.activeTab() === 'Quiz') this.activeTab.set('Overview');
   }
 
   async refreshUnlocks(courseId: number): Promise<void> {

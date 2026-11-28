@@ -59,7 +59,12 @@
 .curriculum-item { padding-inline: 16px; }
 .curriculum-item small { color: #596163; }
 .curriculum-item:disabled { opacity: .6; cursor: default; }
-.quiz-next { margin-top: 12px; }
+.quiz-stage {
+  min-height: clamp(270px, 40vw, 520px);
+  background: white;
+  border: 1px solid #e8e2ef;
+  border-radius: 14px;
+}
 .curriculum-item.current { box-shadow: inset 3px 0 var(--sikai-teal); font-weight: 650; }
 
 .lesson-content { grid-column: 1; margin-top: 0; }

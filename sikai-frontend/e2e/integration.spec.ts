@@ -515,6 +515,13 @@ test('lesson quizzes persist retries and unlock the next lesson only after a pas
   });
   expect(asset.ok()).toBeTruthy();
   const { id: assetId } = await asset.json();
+  // A half-second VP8 clip exercises the real media ended event in Chromium.
+  const clip = Buffer.from('GkXfo59ChoEBQveBAULygQRC84EIQoKEd2VibUKHgQJChYECGFOAZwEAAAAAAAILEU2bdLpNu4tTq4QVSalmU6yBoU27i1OrhBZUrmtTrIHWTbuMU6uEElTDZ1OsggEyTbuMU6uEHFO7a1OsggH17AEAAAAAAABZAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAVSalmsCrXsYMPQkBNgIxMYXZmNjMuMS4xMDJXQYxMYXZmNjMuMS4xMDJEiYhAf0AAAAAAABZUrmvXrgEAAAAAAABO14EBc8WIXtr1d7o4JHicgQAitZyDdW5kiIEAhoVWX1ZQOIOBASPjg4QO5rKA4JCwgRC6gRCagQJVsIRVuYEBVe6BAOwBAAAAAAAAAgAAElTDZ/pzc59jwIBnyJlFo4dFTkNPREVSRIeMTGF2ZjYzLjEuMTAyc3PVY8CLY8WIXtr1d7o4JHhnyKBFo4dFTkNPREVSRIeTTGF2YzYzLjEuMTAyIGxpYnZweGfIoUWjiERVUkFUSU9ORIeTMDA6MDA6MDAuNTAwMDAwMDAwAB9DtnW/54EAo6OBAACAEAIAnQEqEAAQAABHCIWFiIWEiAICAAwNYAD+/6tQgKOVgQD6ALEBAAUQrAAYABhYL/QACAAAHFO7a5G7j7OBALeK94EB8YIBsfCBAw==', 'base64');
+  const videoAsset = await page.request.post('/api/instructor/workspaces/assets', {
+    headers, multipart: { file: { name: 'greeting.webm', mimeType: 'video/webm', buffer: clip } },
+  });
+  expect(videoAsset.ok()).toBeTruthy();
+  const { id: videoId } = await videoAsset.json();
   const id = 'ce66cbc0-35ff-4c24-8e09-a3bb8dc59377';
   const quiz = [
     { prompt: 'Which phrase is a greeting?', options: ['Hello', 'Goodbye'], correct: 0 },
@@ -524,7 +531,7 @@ test('lesson quizzes persist retries and unlock the next lesson only after a pas
     id, title: 'Speaking Quiz Course', description: 'Practise greetings.', category: 'Languages', subcategory: 'English',
     level: 'BEGINNER', price: 0, durationHours: 1, emoji: 'A', accent: 'teal',
     topics: [{ id: 'new-topic', title: 'Speaking practice', lessons: [
-      { id: 'first', title: 'Greetings', kind: 'pdf', assetId, quiz },
+      { id: 'first', title: 'Greetings', kind: 'video', assetId: videoId, duration: 0.5, quiz },
       { id: 'second', title: 'Farewells', kind: 'pdf', assetId, freePreview: true },
     ] }],
   } } });
@@ -551,18 +558,28 @@ test('lesson quizzes persist retries and unlock the next lesson only after a pas
     await student.goto(`/learn/${courseId}?lesson=${second.id}`);
     await expect(student.getByText('Pass the earlier lesson quiz to unlock this lesson.')).toBeVisible();
     await student.getByRole('button', { name: 'Go to Greetings' }).click();
-    await student.getByRole('button', { name: 'Take quiz', exact: true }).click();
+    const video = student.locator('video');
+    await video.evaluate(async (media: HTMLVideoElement) => { media.muted = true; await media.play(); });
+    const quizStage = student.getByRole('region', { name: 'Lesson quiz' });
+    await expect(quizStage.getByText('Question 1 of 2')).toBeVisible();
+    await expect(video).toBeHidden();
+    await expect(quizStage.getByRole('button', { name: 'Next question' })).toBeDisabled();
     await student.getByRole('radio', { name: 'Hello', exact: true }).check();
+    await quizStage.getByRole('button', { name: 'Next question' }).click();
+    await quizStage.getByRole('button', { name: 'Back', exact: true }).click();
+    await expect(student.getByRole('radio', { name: 'Hello', exact: true })).toBeChecked();
+    await quizStage.getByRole('button', { name: 'Next question' }).click();
     await student.getByRole('radio', { name: 'Hello again', exact: true }).check();
     await student.getByRole('button', { name: 'Submit quiz' }).click();
     await expect(student.getByText('1 of 2 correct.')).toBeVisible();
     await expect(student.getByRole('button', { name: 'Next lesson locked' })).toBeDisabled();
-    await student.getByRole('button', { name: 'Try again' }).click();
+    await student.getByRole('button', { name: 'Retry quiz' }).click();
     await student.getByRole('radio', { name: 'Hello', exact: true }).check();
+    await quizStage.getByRole('button', { name: 'Next question' }).click();
     await student.getByRole('radio', { name: 'See you later', exact: true }).check();
     await student.getByRole('button', { name: 'Submit quiz' }).click();
     await expect(student.getByText('2 of 2 correct.')).toBeVisible();
-    await student.getByRole('button', { name: 'Continue to next lesson' }).click();
+    await quizStage.getByRole('button', { name: 'Next lesson', exact: true }).click();
     await expect(student).toHaveURL(new RegExp('lesson=' + second.id + '$'));
     await student.reload();
     await expect(student.getByRole('link', { name: 'Open PDF' })).toBeVisible();
